@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Compras da Família — Assis</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#1F2A20;
+    --ink-2:#2A3A2C;
+    --paper:#FBF6EA;
+    --paper-dim:#F1EADA;
+    --line: rgba(251,246,234,0.14);
+    --line-strong: rgba(251,246,234,0.28);
+    --amber:#E3A23C;
+    --amber-deep:#B97A20;
+    --green:#6C9A5B;
+    --clay:#B6512F;
+    --text-hi:#FBF6EA;
+    --text-lo: rgba(251,246,234,0.62);
+    --text-dark:#20291F;
+    --radius: 10px;
+    --shadow: 0 10px 30px rgba(0,0,0,0.28);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--ink);
+    color:var(--text-hi);
+    font-family:'IBM Plex Sans', system-ui, sans-serif;
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3, .display{
+    font-family:'Fraunces', Georgia, serif;
+    font-weight:600;
+    letter-spacing:-0.01em;
+    line-height:1.05;
+    margin:0;
+  }
+  .mono{ font-family:'IBM Plex Mono', monospace; }
+
+  #app{ max-width:1080px; margin:0 auto; padding: 20px 18px 60px; }
+
+  header.top{
+    display:flex; align-items:flex-end; justify-content:space-between;
+    gap:16px; flex-wrap:wrap;
+    padding: 6px 2px 22px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 22px;
+  }
+  header.top .title{ font-size: clamp(28px, 4.2vw, 40px); }
+  header.top .subtitle{ color: var(--text-lo); font-size:14px; margin-top:6px; }
+  header.top .flag{
+    display:inline-flex; align-items:center; gap:8px;
+    font-size:12.5px; color: var(--text-lo);
+    border:1px solid var(--line-strong); border-radius:999px;
+    padding: 6px 12px;
+  }
+  header.top .flag .dot{ width:7px; height:7px; border-radius:50%; background:var(--green); }
+  header.top .flag.warn .dot{ background:var(--amber); }
+
+  nav.tabs{
+    display:flex; gap:6px; overflow-x:auto; padding-bottom: 2px;
+    margin-bottom: 22px; border-bottom: 1px solid var(--line);
+  }
+  nav.tabs button{
+    appearance:none; border:none; background:transparent; color:var(--text-lo);
+    font-family:'IBM Plex Sans', sans-serif; font-size:14.5px; font-weight:500;
+    padding: 10px 14px; cursor:pointer; white-space:nowrap;
+    border-bottom: 2px solid transparent; margin-bottom:-1px;
+    transition: color .15s ease, border-color .15s ease;
+  }
+  nav.tabs button:hover{ color:var(--text-hi); }
+  nav.tabs button.active{ color:var(--amber); border-color:var(--amber); }
+  nav.tabs button .count{
+    display:inline-block; margin-left:7px; font-family:'IBM Plex Mono',monospace;
+    font-size:11.5px; background:var(--clay); color:var(--text-hi);
+    border-radius:999px; padding: 1px 7px;
+  }
+
+  section.panel{ animation: fade .25s ease; }
+  @keyframes fade{ from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:none;} }
+
+  .card{
+    background:var(--paper); color:var(--text-dark);
+    border-radius: var(--radius); box-shadow: var(--shadow);
+    padding: 20px 20px 22px;
+  }
+  .group-title{
+    display:flex; align-items:baseline; justify-content:space-between;
+    margin: 26px 0 10px;
+  }
+  .group-title:first-child{ margin-top:0; }
+  .group-title h3{ font-size:18px; }
+  .group-title .hint{ font-size:12.5px; color:var(--text-lo); }
+
+  table{ width:100%; border-collapse:collapse; }
+  th{
+    text-align:left; font-size:11.5px; font-weight:600; color:#5b6b54;
+    padding: 6px 10px; border-bottom:1px solid rgba(32,41,31,0.14);
+  }
+  td{ padding: 9px 10px; border-bottom:1px solid rgba(32,41,31,0.08); font-size:14.5px; vertical-align:middle; }
+  tr:last-child td{ border-bottom:none; }
+  td.num, th.num{ text-align:right; font-family:'IBM Plex Mono', monospace; }
+
+  input[type=number], input[type=text], input[type=date], select{
+    font-family:'IBM Plex Sans', sans-serif; font-size:14px;
+    border:1px solid rgba(32,41,31,0.22); border-radius:7px;
+    padding:7px 9px; background:#fff; color:var(--text-dark);
+    width:100%;
+  }
+  input[type=number]{ width:74px; text-align:right; font-family:'IBM Plex Mono', monospace; }
+  input:focus, select:focus{ outline:2px solid var(--amber-deep); outline-offset:1px; }
+
+  .tag{
+    display:inline-flex; align-items:center; gap:6px;
+    font-size:12px; font-weight:600; padding:3px 9px; border-radius:999px;
+  }
+  .tag.ok{ background:rgba(108,154,91,0.16); color:#3f6a34; }
+  .tag.repor{ background:rgba(227,162,60,0.22); color:#8a5a12; }
+  .tag.critico{ background:rgba(182,81,47,0.16); color:#8f3a20; }
+
+  button.btn{
+    appearance:none; border:none; cursor:pointer; border-radius:8px;
+    font-family:'IBM Plex Sans', sans-serif; font-weight:600; font-size:13.5px;
+    padding: 9px 15px;
+    background: var(--ink); color: var(--text-hi);
+  }
+  button.btn.primary{ background: var(--amber-deep); color:#fff; }
+  button.btn.ghost{ background:transparent; color: var(--text-dark); border:1px solid rgba(32,41,31,0.25); }
+  button.btn:hover{ filter:brightness(1.08); }
+
+  .empty{
+    padding: 26px 16px; text-align:center; color:#5b6b54; font-size:14px;
+    border: 1px dashed rgba(32,41,31,0.25); border-radius:8px;
+  }
+
+  form.price-form{
+    display:grid; grid-template-columns: 1.6fr 1fr .8fr .7fr .7fr auto; gap:10px;
+    align-items:end; margin-top:6px;
+  }
+  form.price-form label{ font-size:11.5px; color:#5b6b54; display:block; margin-bottom:4px; }
+
+  .scenarios{ display:grid; grid-template-columns:repeat(3, 1fr); gap:14px; }
+  .scenario{
+    background:var(--paper); color:var(--text-dark); border-radius:var(--radius);
+    padding:18px 18px 20px; box-shadow: var(--shadow);
+  }
+  .scenario h3{ font-size:16px; margin-bottom:2px; }
+  .scenario .total{ font-family:'Fraunces', serif; font-size:32px; font-weight:600; margin:10px 0 4px; }
+  .scenario .meta{ font-size:12.5px; color:#5b6b54; }
+  .scenario.economico{ border-top: 4px solid var(--green); }
+  .scenario.equilibrado{ border-top: 4px solid var(--amber); }
+  .scenario.conforto{ border-top: 4px solid var(--clay); }
+
+  .best{ font-weight:700; color:#3f6a34; }
+
+  .loading{ opacity:0.6; pointer-events:none; }
+
+  @media (max-width: 720px){
+    form.price-form{ grid-template-columns: 1fr 1fr; }
+    .scenarios{ grid-template-columns: 1fr; }
+    table.compact thead{ display:none; }
+    table.compact tr{ display:block; padding:10px 0; border-bottom:1px solid rgba(32,41,31,0.1); }
+    table.compact td{ display:flex; justify-content:space-between; border:none; padding:3px 10px; }
+    table.compact td::before{ content: attr(data-label); color:#5b6b54; font-size:12px; }
+  }
+
+  @media print{
+    nav.tabs, header.top .flag, .no-print{ display:none !important; }
+    body{ background:#fff; color:#000; }
+    .card{ box-shadow:none; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="top">
+    <div>
+      <div class="title display">Compras da Família</div>
+      <div class="subtitle">Estoque, preços e compra do mês — Assis, SP</div>
+    </div>
+    <div id="headerFlag" class="flag"><span class="dot"></span><span id="headerFlagText">carregando…</span></div>
+  </header>
+
+  <nav class="tabs" id="tabs"></nav>
+  <section class="panel" id="panel"></section>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+(function(){
+  "use strict";
+
+  // Credenciais do Supabase (public, seguro expostar na frente)
+  const SUPABASE_URL = 'https://gnethyhywncvbosonmqp.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_bpxktwGt6gywQkE4rcZE3A_mnuwoKTc';
+  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  // Catálogo (igual antes)
+  const CATALOG = [
+    {id:'arroz', nome:'Arroz 5kg', cat:'Alimentação básica', un:'pacote', min:1, max:3, mercado:'max'},
+    {id:'feijao', nome:'Feijão 1kg', cat:'Alimentação básica', un:'pacote', min:2, max:8, mercado:'max'},
+    {id:'macarrao', nome:'Macarrão', cat:'Alimentação básica', un:'pacote', min:3, max:10, mercado:'max'},
+    {id:'farinha', nome:'Farinha de trigo', cat:'Alimentação básica', un:'kg', min:1, max:3, mercado:'max'},
+    {id:'acucar', nome:'Açúcar 5kg', cat:'Alimentação básica', un:'pacote', min:1, max:2, mercado:'max'},
+    {id:'sal', nome:'Sal', cat:'Alimentação básica', un:'pacote', min:1, max:2, mercado:'max'},
+    {id:'oleo', nome:'Óleo de soja', cat:'Alimentação básica', un:'un', min:2, max:6, mercado:'max'},
+    {id:'azeite', nome:'Azeite', cat:'Alimentação básica', un:'un', min:1, max:2, mercado:'max'},
+    {id:'vinagre', nome:'Vinagre', cat:'Alimentação básica', un:'un', min:1, max:2, mercado:'max'},
+    {id:'molho', nome:'Molho/extrato de tomate', cat:'Alimentação básica', un:'un', min:3, max:10, mercado:'max'},
+    {id:'enlatados', nome:'Enlatados (milho, ervilha, atum)', cat:'Alimentação básica', un:'un', min:3, max:8, mercado:'max'},
+    {id:'cafe', nome:'Café', cat:'Alimentação básica', un:'pacote', min:1, max:3, mercado:'max'},
+    {id:'aveia', nome:'Aveia', cat:'Alimentação básica', un:'pacote', min:1, max:3, mercado:'max'},
+    {id:'carne', nome:'Carne bovina (moída/cortes)', cat:'Carnes e proteínas', un:'kg', min:2, max:10, mercado:'max'},
+    {id:'frango', nome:'Frango', cat:'Carnes e proteínas', un:'kg', min:2, max:8, mercado:'max'},
+    {id:'ovos', nome:'Ovos', cat:'Carnes e proteínas', un:'dúzia', min:1, max:2, mercado:'semanal'},
+    {id:'linguica', nome:'Linguiça/embutidos', cat:'Carnes e proteínas', un:'kg', min:0, max:2, mercado:'semanal'},
+    {id:'leite', nome:'Leite (longa vida)', cat:'Laticínios', un:'litro', min:4, max:20, mercado:'max'},
+    {id:'queijo', nome:'Queijo/muçarela', cat:'Laticínios', un:'kg', min:0, max:1, mercado:'semanal'},
+    {id:'margarina', nome:'Manteiga/margarina', cat:'Laticínios', un:'un', min:1, max:2, mercado:'max'},
+    {id:'iogurte', nome:'Iogurte', cat:'Laticínios', un:'un', min:0, max:6, mercado:'semanal'},
+    {id:'creme_leite', nome:'Creme de leite/leite condensado', cat:'Laticínios', un:'un', min:2, max:6, mercado:'max'},
+    {id:'pao_forma', nome:'Pão de forma', cat:'Café da manhã e lanches', un:'un', min:0, max:2, mercado:'semanal'},
+    {id:'biscoitos', nome:'Biscoitos/bolachas', cat:'Café da manhã e lanches', un:'un', min:2, max:6, mercado:'max'},
+    {id:'cereal', nome:'Cereal', cat:'Café da manhã e lanches', un:'un', min:1, max:3, mercado:'max'},
+    {id:'geleia', nome:'Geleia/pasta de amendoim', cat:'Café da manhã e lanches', un:'un', min:1, max:2, mercado:'max'},
+    {id:'fruta_perecivel', nome:'Fruta perecível (banana, mamão, uva)', cat:'Frutas', un:'kg', min:0, max:3, mercado:'semanal'},
+    {id:'fruta_duravel', nome:'Fruta durável (maçã, laranja, limão)', cat:'Frutas', un:'kg', min:0, max:5, mercado:'semanal'},
+    {id:'folhas', nome:'Folhas (alface, couve)', cat:'Verduras e legumes', un:'un', min:0, max:2, mercado:'semanal'},
+    {id:'legumes', nome:'Legumes duráveis (cenoura, batata, cebola)', cat:'Verduras e legumes', un:'kg', min:1, max:4, mercado:'semanal'},
+    {id:'alho_cebola', nome:'Alho e cebola', cat:'Verduras e legumes', un:'kg', min:0, max:1, mercado:'semanal'},
+    {id:'agua', nome:'Água', cat:'Bebidas', un:'un', min:0, max:12, mercado:'max'},
+    {id:'sucos', nome:'Sucos/refrigerantes', cat:'Bebidas', un:'un', min:0, max:6, mercado:'semanal'},
+    {id:'detergente', nome:'Detergente', cat:'Limpeza', un:'un', min:2, max:6, mercado:'max'},
+    {id:'sabao_po', nome:'Sabão em pó/líquido', cat:'Limpeza', un:'un', min:1, max:3, mercado:'max'},
+    {id:'amaciante', nome:'Amaciante', cat:'Limpeza', un:'un', min:1, max:2, mercado:'max'},
+    {id:'agua_sanitaria', nome:'Água sanitária', cat:'Limpeza', un:'un', min:1, max:3, mercado:'max'},
+    {id:'desinfetante', nome:'Desinfetante', cat:'Limpeza', un:'un', min:1, max:3, mercado:'max'},
+    {id:'multiuso', nome:'Limpador multiuso', cat:'Limpeza', un:'un', min:1, max:2, mercado:'max'},
+    {id:'sacos_lixo', nome:'Sacos de lixo', cat:'Limpeza', un:'un', min:1, max:3, mercado:'max'},
+    {id:'esponjas', nome:'Esponjas/panos', cat:'Limpeza', un:'un', min:1, max:3, mercado:'max'},
+    {id:'tira_manchas', nome:'Tira-manchas/alvejante', cat:'Limpeza', un:'un', min:0, max:2, mercado:'max'},
+    {id:'papel_higienico', nome:'Papel higiênico (fardo)', cat:'Higiene pessoal', un:'fardo', min:1, max:2, mercado:'max'},
+    {id:'sabonete', nome:'Sabonete', cat:'Higiene pessoal', un:'un', min:2, max:6, mercado:'max'},
+    {id:'shampoo', nome:'Shampoo/condicionador', cat:'Higiene pessoal', un:'un', min:1, max:2, mercado:'max'},
+    {id:'creme_dental', nome:'Creme dental', cat:'Higiene pessoal', un:'un', min:1, max:3, mercado:'max'},
+    {id:'desodorante', nome:'Desodorante', cat:'Higiene pessoal', un:'un', min:2, max:4, mercado:'max'},
+    {id:'absorventes', nome:'Absorventes', cat:'Higiene pessoal', un:'un', min:1, max:2, mercado:'max'},
+    {id:'papel_toalha', nome:'Papel toalha', cat:'Papelaria e doméstico', un:'un', min:1, max:3, mercado:'max'},
+    {id:'papel_aluminio', nome:'Papel alumínio/filme plástico', cat:'Papelaria e doméstico', un:'un', min:1, max:2, mercado:'max'},
+    {id:'sacos_freezer', nome:'Sacos para freezer', cat:'Papelaria e doméstico', un:'caixa', min:1, max:3, mercado:'max'},
+    {id:'pilhas', nome:'Pilhas/lâmpadas', cat:'Papelaria e doméstico', un:'un', min:0, max:2, mercado:'max'},
+  ];
+
+  const MERCADOS = ['Max Atacadista', 'Amigão', 'Super Bom', 'Avenida'];
+  const TABS = [
+    {id:'estoque', label:'Estoque'},
+    {id:'compras', label:'Compras'},
+    {id:'precos', label:'Preços'},
+    {id:'comparador', label:'Comparador'},
+    {id:'orcamento', label:'Orçamento'}
+  ];
+
+  let STATE = { estoque: {}, precos: [] };
+  let ACTIVE_TAB = 'estoque';
+  let isLoading = false;
+
+  function fmtBRL(n){
+    if (!isFinite(n)) return '—';
+    return n.toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
+  }
+
+  function groupBy(arr, keyFn){
+    const out = {};
+    arr.forEach(function(x){
+      const k = keyFn(x);
+      (out[k] = out[k] || []).push(x);
+    });
+    return out;
+  }
+
+  function itemStatus(it){
+    const atual = Number(STATE.estoque[it.id] || 0);
+    if (atual <= 0) return 'critico';
+    if (atual <= it.min) return 'repor';
+    return 'ok';
+  }
+
+  // Carregar do Supabase
+  async function loadData(){
+    try {
+      isLoading = true;
+      const [estoqueRes, precosRes] = await Promise.all([
+        supabase.from('estoque').select('*'),
+        supabase.from('precos').select('*')
+      ]);
+
+      if (estoqueRes.error) throw estoqueRes.error;
+      if (precosRes.error) throw precosRes.error;
+
+      STATE.estoque = {};
+      CATALOG.forEach(function(it){ STATE.estoque[it.id] = 0; });
+      
+      estoqueRes.data.forEach(function(row){
+        STATE.estoque[row.item_id] = Number(row.quantidade);
+      });
+
+      STATE.precos = precosRes.data.map(function(row){
+        return {
+          id: row.id,
+          itemId: row.item_id,
+          mercado: row.mercado,
+          preco: Number(row.preco),
+          tamanho: Number(row.tamanho),
+          unidade: row.unidade,
+          data: row.data
+        };
+      });
+
+      isLoading = false;
+    } catch(err){
+      console.error('Erro ao carregar:', err);
+      isLoading = false;
+    }
+  }
+
+  // Salvar estoque no Supabase
+  async function saveEstoque(itemId, quantidade){
+    try {
+      const existing = await supabase
+        .from('estoque')
+        .select('id')
+        .eq('item_id', itemId)
+        .single();
+
+      if (existing.data){
+        await supabase
+          .from('estoque')
+          .update({quantidade: quantidade, atualizado_em: new Date().toISOString()})
+          .eq('id', existing.data.id);
+      } else {
+        await supabase
+          .from('estoque')
+          .insert({id: 'e_' + itemId + '_' + Date.now(), item_id: itemId, quantidade: quantidade});
+      }
+    } catch(err){
+      console.error('Erro ao salvar estoque:', err);
+    }
+  }
+
+  // Salvar preço no Supabase
+  async function savePreco(entrada){
+    try {
+      await supabase.from('precos').insert({
+        id: entrada.id,
+        item_id: entrada.itemId,
+        mercado: entrada.mercado,
+        preco: entrada.preco,
+        tamanho: entrada.tamanho,
+        unidade: entrada.unidade,
+        data: entrada.data
+      });
+    } catch(err){
+      console.error('Erro ao salvar preço:', err);
+    }
+  }
+
+  // Deletar preço
+  async function deletePreco(id){
+    try {
+      await supabase.from('precos').delete().eq('id', id);
+    } catch(err){
+      console.error('Erro ao deletar preço:', err);
+    }
+  }
+
+  // Render
+  function renderTabs(){
+    const criticos = CATALOG.filter(function(it){ return itemStatus(it) !== 'ok'; }).length;
+    const nav = document.getElementById('tabs');
+    nav.innerHTML = TABS.map(function(t){
+      const badge = (t.id === 'compras' && criticos > 0) ? '<span class="count">'+criticos+'</span>' : '';
+      return '<button data-tab="'+t.id+'" class="'+(ACTIVE_TAB===t.id?'active':'')+'">'+t.label+badge+'</button>';
+    }).join('');
+    Array.prototype.forEach.call(nav.querySelectorAll('button'), function(btn){
+      btn.addEventListener('click', function(){
+        ACTIVE_TAB = btn.getAttribute('data-tab');
+        renderAll();
+      });
+    });
+
+    const flag = document.getElementById('headerFlagText');
+    const flagEl = document.getElementById('headerFlag');
+    if (criticos > 0){
+      flag.textContent = criticos + ' ' + (criticos === 1 ? 'item para repor' : 'itens para repor');
+      flagEl.classList.add('warn');
+    } else {
+      flag.textContent = 'estoque em dia';
+      flagEl.classList.remove('warn');
+    }
+  }
+
+  function renderEstoque(){
+    const byCat = groupBy(CATALOG, function(it){ return it.cat; });
+    let html = '<div class="card">';
+    Object.keys(byCat).forEach(function(cat){
+      html += '<div class="group-title"><h3>'+cat+'</h3></div>';
+      html += '<table class="compact"><thead><tr><th>Produto</th><th class="num">Atual</th><th class="num">Mín</th><th class="num">Máx</th><th>Status</th></tr></thead><tbody>';
+      byCat[cat].forEach(function(it){
+        const atual = Number(STATE.estoque[it.id] || 0);
+        const st = itemStatus(it);
+        const tagLabel = st === 'ok' ? 'ok' : (st === 'repor' ? 'repor' : 'falta');
+        html += '<tr>'
+          + '<td data-label="Produto">'+it.nome+' <span class="mono" style="color:#8a9a83;font-size:12px;">('+it.un+')</span></td>'
+          + '<td data-label="Atual" class="num"><input type="number" min="0" step="1" value="'+atual+'" data-id="'+it.id+'" class="estoque-input"></td>'
+          + '<td data-label="Mín" class="num">'+it.min+'</td>'
+          + '<td data-label="Máx" class="num">'+it.max+'</td>'
+          + '<td data-label="Status"><span class="tag '+st+'">'+tagLabel+'</span></td>'
+          + '</tr>';
+      });
+      html += '</tbody></table>';
+    });
+    html += '</div>';
+    document.getElementById('panel').innerHTML = html;
+
+    Array.prototype.forEach.call(document.querySelectorAll('.estoque-input'), function(inp){
+      inp.addEventListener('change', function(){
+        const id = inp.getAttribute('data-id');
+        const v = Math.max(0, parseFloat(inp.value) || 0);
+        STATE.estoque[id] = v;
+        saveEstoque(id, v);
+        renderAll();
+      });
+    });
+  }
+
+  function renderCompras(){
+    const pendentes = CATALOG.filter(function(it){ return itemStatus(it) !== 'ok'; });
+    let html = '';
+    if (pendentes.length === 0){
+      html = '<div class="empty">Nada pra repor agora — estoque em dia em todas as categorias.</div>';
+    } else {
+      const grupos = {
+        max: {titulo:'Max Atacadista — compra grande (estoque)', itens:[]},
+        semanal: {titulo:'Amigão / Super Bom — reposição semanal', itens:[]}
+      };
+      pendentes.forEach(function(it){ grupos[it.mercado].itens.push(it); });
+      html += '<div class="no-print" style="margin-bottom:14px; display:flex; justify-content:flex-end;">'
+        + '<button class="btn ghost" onclick="window.print()">Imprimir lista</button></div>';
+      html += '<div class="card">';
+      Object.keys(grupos).forEach(function(g){
+        const grupo = grupos[g];
+        if (grupo.itens.length === 0) return;
+        html += '<div class="group-title"><h3>'+grupo.titulo+'</h3><span class="hint">'+grupo.itens.length+' itens</span></div>';
+        html += '<table class="compact"><thead><tr><th>Produto</th><th class="num">Comprar</th></tr></thead><tbody>';
+        grupo.itens.forEach(function(it){
+          const atual = Number(STATE.estoque[it.id] || 0);
+          const sugestao = Math.max(1, it.max - atual);
+          html += '<tr><td data-label="Produto">'+it.nome+'</td><td data-label="Comprar" class="num">'+sugestao+' '+it.un+'</td></tr>';
+        });
+        html += '</tbody></table>';
+      });
+      html += '</div>';
+    }
+    document.getElementById('panel').innerHTML = html;
+  }
+
+  function renderPrecos(){
+    let options = CATALOG.map(function(it){ return '<option value="'+it.id+'">'+it.nome+'</option>'; }).join('');
+    let mercadoOptions = MERCADOS.map(function(m){ return '<option value="'+m+'">'+m+'</option>'; }).join('');
+    const today = new Date().toISOString().slice(0,10);
+
+    let html = '<div class="card">'
+      + '<div class="group-title"><h3>Registrar preço</h3><span class="hint">use o preço real visto na loja, no app ou na nota</span></div>'
+      + '<form class="price-form" id="priceForm">'
+      + '<div><label>Produto</label><select name="itemId">'+options+'</select></div>'
+      + '<div><label>Mercado</label><select name="mercado">'+mercadoOptions+'</select></div>'
+      + '<div><label>Preço (R$)</label><input type="number" name="preco" min="0" step="0.01" required></div>'
+      + '<div><label>Tam. embalagem</label><input type="number" name="tamanho" min="0.001" step="0.001" required placeholder="ex: 5"></div>'
+      + '<div><label>Unidade</label><select name="unidade"><option value="kg">kg</option><option value="l">l</option><option value="un">un</option></select></div>'
+      + '<div><button class="btn primary" type="submit">Adicionar</button></div>'
+      + '</form>'
+      + '<input type="hidden" id="priceDateDefault" value="'+today+'">'
+      + '</div>';
+
+    const byItem = groupBy(STATE.precos.slice().sort(function(a,b){ return (b.data||'').localeCompare(a.data||''); }), function(p){ return p.itemId; });
+    const itemsComHistorico = Object.keys(byItem);
+
+    html += '<div class="group-title" style="margin-top:26px;"><h3>Histórico</h3></div>';
+    if (itemsComHistorico.length === 0){
+      html += '<div class="empty">Nenhum preço registrado ainda. Adicione o primeiro acima.</div>';
+    } else {
+      html += '<div class="card">';
+      itemsComHistorico.forEach(function(itemId){
+        const it = CATALOG.find(function(c){ return c.id === itemId; });
+        if (!it) return;
+        html += '<div class="group-title"><h3 style="font-size:15px;">'+it.nome+'</h3></div>';
+        html += '<table class="compact"><thead><tr><th>Data</th><th>Mercado</th><th class="num">Preço</th><th class="num">Embalagem</th><th class="num">R$/'+it.un.replace('pacote','un').replace('dúzia','un').replace('fardo','un').replace('caixa','un')+'</th><th></th></tr></thead><tbody>';
+        byItem[itemId].forEach(function(p){
+          const unit = p.preco / p.tamanho;
+          html += '<tr>'
+            + '<td data-label="Data">'+(p.data||'—')+'</td>'
+            + '<td data-label="Mercado">'+p.mercado+'</td>'
+            + '<td data-label="Preço" class="num">'+fmtBRL(p.preco)+'</td>'
+            + '<td data-label="Embalagem" class="num">'+p.tamanho+' '+p.unidade+'</td>'
+            + '<td data-label="Unitário" class="num">'+fmtBRL(unit)+'</td>'
+            + '<td class="no-print"><button class="btn ghost" data-del="'+p.id+'" style="padding:4px 9px;font-size:12px;">remover</button></td>'
+            + '</tr>';
+        });
+        html += '</tbody></table>';
+      });
+      html += '</div>';
+    }
+
+    document.getElementById('panel').innerHTML = html;
+
+    document.getElementById('priceForm').addEventListener('submit', function(ev){
+      ev.preventDefault();
+      const fd = new FormData(ev.target);
+      const entry = {
+        id: 'p_' + Date.now() + '_' + Math.floor(Math.random()*1000),
+        itemId: fd.get('itemId'),
+        mercado: fd.get('mercado'),
+        preco: parseFloat(fd.get('preco')),
+        tamanho: parseFloat(fd.get('tamanho')),
+        unidade: fd.get('unidade'),
+        data: document.getElementById('priceDateDefault').value
+      };
+      if (!entry.preco || !entry.tamanho) return;
+      STATE.precos.push(entry);
+      savePreco(entry);
+      renderAll();
+    });
+
+    Array.prototype.forEach.call(document.querySelectorAll('[data-del]'), function(btn){
+      btn.addEventListener('click', function(){
+        const id = btn.getAttribute('data-del');
+        STATE.precos = STATE.precos.filter(function(p){ return p.id !== id; });
+        deletePreco(id);
+        renderAll();
+      });
+    });
+  }
+
+  function renderComparador(){
+    const comHistorico = CATALOG.filter(function(it){
+      return STATE.precos.some(function(p){ return p.itemId === it.id; });
+    });
+    let html = '';
+    if (comHistorico.length === 0){
+      html = '<div class="empty">Adicione preços na aba "Preços" para ver a comparação por unidade aqui.</div>';
+    } else {
+      html = '<div class="card"><table><thead><tr><th>Produto</th>'
+        + MERCADOS.map(function(m){ return '<th class="num">'+m+'</th>'; }).join('')
+        + '</tr></thead><tbody>';
+      comHistorico.forEach(function(it){
+        const porMercado = {};
+        MERCADOS.forEach(function(m){ porMercado[m] = null; });
+        STATE.precos.filter(function(p){ return p.itemId === it.id; }).forEach(function(p){
+          const unit = p.preco / p.tamanho;
+          if (porMercado[p.mercado] === null || (p.data||'') >= (porMercado[p.mercado]._data||'')){
+            porMercado[p.mercado] = {valor: unit, _data: p.data};
+          }
+        });
+        const valores = Object.keys(porMercado).map(function(m){ return porMercado[m] ? porMercado[m].valor : Infinity; });
+        const min = Math.min.apply(null, valores);
+        html += '<tr><td>'+it.nome+' <span class="mono" style="color:#8a9a83;font-size:12px;">(R$/'+it.un+')</span></td>';
+        MERCADOS.forEach(function(m){
+          const v = porMercado[m];
+          if (!v){ html += '<td class="num" style="color:#b8c2b2;">—</td>'; }
+          else {
+            const isBest = v.valor === min;
+            html += '<td class="num'+(isBest?' best':'')+'">'+fmtBRL(v.valor)+'</td>';
+          }
+        });
+        html += '</tr>';
+      });
+      html += '</tbody></table></div>';
+    }
+    document.getElementById('panel').innerHTML = html;
+  }
+
+  function renderOrcamento(){
+    function scenarioFor(picker){
+      let total = 0, comDado = 0;
+      CATALOG.forEach(function(it){
+        const precosItem = STATE.precos.filter(function(p){ return p.itemId === it.id; }).map(function(p){ return p.preco / p.tamanho; });
+        if (precosItem.length === 0) return;
+        comDado++;
+        const unit = picker(precosItem);
+        total += unit * it.max;
+      });
+      return {total: total, comDado: comDado};
+    }
+    const eco = scenarioFor(function(a){ return Math.min.apply(null, a); });
+    const equi = scenarioFor(function(a){ return a.reduce(function(s,v){return s+v;},0) / a.length; });
+    const conf = scenarioFor(function(a){ return Math.max.apply(null, a); });
+    const totalItens = CATALOG.length;
+
+    let html = '<div class="scenarios">'
+      + '<div class="scenario economico"><h3>Econômico</h3><div class="total">'+fmtBRL(eco.total)+'</div><div class="meta">menor preço já registrado por item</div></div>'
+      + '<div class="scenario equilibrado"><h3>Equilibrado</h3><div class="total">'+fmtBRL(equi.total)+'</div><div class="meta">preço médio registrado por item</div></div>'
+      + '<div class="scenario conforto"><h3>Conforto</h3><div class="total">'+fmtBRL(conf.total)+'</div><div class="meta">maior preço já registrado por item</div></div>'
+      + '</div>'
+      + '<div style="margin-top:16px; color: var(--text-lo); font-size:13px;">'
+      + 'Calculado com base em <strong style="color:var(--text-hi);">'+eco.comDado+' de '+totalItens+'</strong> itens do catálogo que já têm pelo menos um preço registrado. '
+      + 'Quanto mais preços você adicionar na aba "Preços", mais completo (e real) fica esse número — os itens sem preço ainda não entram na conta.'
+      + '</div>';
+    document.getElementById('panel').innerHTML = html;
+  }
+
+  function renderAll(){
+    renderTabs();
+    if (ACTIVE_TAB === 'estoque') renderEstoque();
+    else if (ACTIVE_TAB === 'compras') renderCompras();
+    else if (ACTIVE_TAB === 'precos') renderPrecos();
+    else if (ACTIVE_TAB === 'comparador') renderComparador();
+    else if (ACTIVE_TAB === 'orcamento') renderOrcamento();
+  }
+
+  (async function boot(){
+    await loadData();
+    renderAll();
+  })();
+})();
+</script>
+</body>
+</html>
