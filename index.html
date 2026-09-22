@@ -624,21 +624,107 @@
     if (NOTA_STATE.fase === 'form'){
       panel.innerHTML = '<div class="card">'
         + '<div class="group-title"><h3>Importar nota fiscal pelo QR Code</h3></div>'
-        + '<p style="font-size:14px;color:#5b6b54;margin:0 0 18px;">Abra o QR code da nota fiscal com o leitor do seu celular — ele vai abrir uma página da SEFAZ-SP. Copie a URL completa dessa página e cole aqui.</p>'
+        + '<p style="font-size:14px;color:#5b6b54;margin:0 0 18px;">Aponte a câmera para o QR code da nota fiscal ou cole a URL manualmente.</p>'
+
+        // Área da câmera
+        + '<div id="qrArea" style="display:none;margin-bottom:16px;">'
+        + '<video id="qrVideo" style="width:100%;max-width:400px;border-radius:8px;background:#000;" playsinline></video>'
+        + '<canvas id="qrCanvas" style="display:none;"></canvas>'
+        + '<div style="margin-top:8px;display:flex;gap:10px;">'
+        + '<button class="btn ghost" id="btnPararCamera" style="font-size:12px;">✕ Fechar câmera</button>'
+        + '<span id="qrStatus" style="font-size:13px;color:#5b6b54;align-self:center;"></span>'
+        + '</div></div>'
+
         + '<div style="display:grid;gap:10px;">'
-        + '<div><label style="font-size:11.5px;color:#5b6b54;display:block;margin-bottom:4px;">URL da nota fiscal (SEFAZ-SP)</label>'
+        + '<div style="display:flex;gap:10px;flex-wrap:wrap;">'
+        + '<button class="btn primary" id="btnAbrirCamera">📷 Escanear QR Code</button>'
+        + '<span style="align-self:center;color:var(--text-lo);font-size:13px;">ou</span>'
+        + '</div>'
+        + '<div><label style="font-size:11.5px;color:#5b6b54;display:block;margin-bottom:4px;">Cole a URL da nota manualmente</label>'
         + '<input type="text" id="notaUrl" placeholder="https://www.nfce.fazenda.sp.gov.br/..." style="width:100%;"></div>'
         + '<div style="display:flex;gap:10px;align-items:center;">'
-        + '<button class="btn primary" id="btnBuscarNota">Buscar nota</button>'
+        + '<button class="btn ghost" id="btnBuscarNota">Buscar pela URL</button>'
         + '<span id="notaStatus" style="font-size:13px;color:#5b6b54;"></span>'
         + '</div></div></div>';
 
-      document.getElementById('btnBuscarNota').addEventListener('click', async function(){
-        const url = document.getElementById('notaUrl').value.trim();
-        const status = document.getElementById('notaStatus');
-        if (!url){ status.textContent = 'Cole a URL da nota primeiro.'; return; }
-        status.textContent = 'Buscando nota…';
-        document.getElementById('btnBuscarNota').disabled = true;
+      // Lógica da câmera + leitor QR (usando jsQR via CDN)
+      var qrStream = null;
+      var qrAnimFrame = null;
+
+      function pararCamera(){
+        if (qrStream) qrStream.getTracks().forEach(function(t){ t.stop(); });
+        if (qrAnimFrame) cancelAnimationFrame(qrAnimFrame);
+        qrStream = null; qrAnimFrame = null;
+        var area = document.getElementById('qrArea');
+        if (area) area.style.display = 'none';
+      }
+
+      function lerQrFrame(){
+        var video = document.getElementById('qrVideo');
+        var canvas = document.getElementById('qrCanvas');
+        var status = document.getElementById('qrStatus');
+        if (!video || !canvas) return;
+        if (video.readyState === video.HAVE_ENOUGH_DATA){
+          canvas.height = video.videoHeight;
+          canvas.width = video.videoWidth;
+          var ctx = canvas.getContext('2d');
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          var code = window.jsQR && window.jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' });
+          if (code && code.data && code.data.startsWith('http')){
+            status.textContent = '✅ QR Code lido!';
+            pararCamera();
+            var urlInput = document.getElementById('notaUrl');
+            if (urlInput) urlInput.value = code.data;
+            buscarNota(code.data);
+            return;
+          }
+          if (status) status.textContent = 'Procurando QR code…';
+        }
+        qrAnimFrame = requestAnimationFrame(lerQrFrame);
+      }
+
+      document.getElementById('btnAbrirCamera').addEventListener('click', function(){
+        if (!window.jsQR){
+          // Carrega jsQR dinamicamente
+          var script = document.createElement('script');
+          script.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js';
+          script.onload = function(){ abrirCamera(); };
+          script.onerror = function(){
+            document.getElementById('notaStatus').textContent = '❌ Não foi possível carregar o leitor de QR. Use a URL manual.';
+          };
+          document.head.appendChild(script);
+        } else {
+          abrirCamera();
+        }
+      });
+
+      function abrirCamera(){
+        var area = document.getElementById('qrArea');
+        var video = document.getElementById('qrVideo');
+        if (!area || !video) return;
+        area.style.display = 'block';
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+          .then(function(stream){
+            qrStream = stream;
+            video.srcObject = stream;
+            video.play();
+            qrAnimFrame = requestAnimationFrame(lerQrFrame);
+          })
+          .catch(function(err){
+            area.style.display = 'none';
+            document.getElementById('notaStatus').textContent = '❌ Câmera não disponível. Cole a URL manualmente.';
+          });
+      }
+
+      document.getElementById('btnPararCamera') && document.getElementById('btnPararCamera').addEventListener('click', pararCamera);
+
+      async function buscarNota(url){
+        var status = document.getElementById('notaStatus');
+        if (!url){ if(status) status.textContent = 'Cole a URL da nota primeiro.'; return; }
+        if(status) status.textContent = 'Buscando nota…';
+        var btn = document.getElementById('btnBuscarNota');
+        if(btn) btn.disabled = true;
         try {
           const res = await fetch('/api/importar-nota', {
             method: 'POST',
@@ -647,16 +733,22 @@
           });
           const data = await res.json();
           if (!res.ok || !data.ok){
-            status.textContent = '❌ ' + (data.erro || 'Erro ao buscar nota.');
-            document.getElementById('btnBuscarNota').disabled = false;
+            if(status) status.textContent = '❌ ' + (data.erro || 'Erro ao buscar nota.');
+            if(btn) btn.disabled = false;
             return;
           }
           NOTA_STATE = { fase: 'confirmar', itens: data.itens, mercado: data.mercado, url };
+          pararCamera();
           renderNota();
         } catch(e){
-          status.textContent = '❌ Erro de conexão. Tente novamente.';
-          document.getElementById('btnBuscarNota').disabled = false;
+          if(status) status.textContent = '❌ Erro de conexão. Tente novamente.';
+          if(btn) btn.disabled = false;
         }
+      }
+
+      document.getElementById('btnBuscarNota').addEventListener('click', function(){
+        const url = document.getElementById('notaUrl').value.trim();
+        buscarNota(url);
       });
 
     } else if (NOTA_STATE.fase === 'confirmar'){
