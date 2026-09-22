@@ -262,6 +262,7 @@
     {id:'estoque', label:'Estoque'},
     {id:'compras', label:'Compras'},
     {id:'precos', label:'Preços'},
+    {id:'nota', label:'📄 Importar Nota'},
     {id:'comparador', label:'Comparador'},
     {id:'orcamento', label:'Orçamento'}
   ];
@@ -614,11 +615,147 @@
     document.getElementById('panel').innerHTML = html;
   }
 
+  // ---------- Render: Importar Nota Fiscal ----------
+  let NOTA_STATE = { fase: 'form', itens: [], mercado: '', url: '' };
+
+  function renderNota(){
+    const panel = document.getElementById('panel');
+
+    if (NOTA_STATE.fase === 'form'){
+      panel.innerHTML = '<div class="card">'
+        + '<div class="group-title"><h3>Importar nota fiscal pelo QR Code</h3></div>'
+        + '<p style="font-size:14px;color:#5b6b54;margin:0 0 18px;">Abra o QR code da nota fiscal com o leitor do seu celular — ele vai abrir uma página da SEFAZ-SP. Copie a URL completa dessa página e cole aqui.</p>'
+        + '<div style="display:grid;gap:10px;">'
+        + '<div><label style="font-size:11.5px;color:#5b6b54;display:block;margin-bottom:4px;">URL da nota fiscal (SEFAZ-SP)</label>'
+        + '<input type="text" id="notaUrl" placeholder="https://www.nfce.fazenda.sp.gov.br/..." style="width:100%;"></div>'
+        + '<div style="display:flex;gap:10px;align-items:center;">'
+        + '<button class="btn primary" id="btnBuscarNota">Buscar nota</button>'
+        + '<span id="notaStatus" style="font-size:13px;color:#5b6b54;"></span>'
+        + '</div></div></div>';
+
+      document.getElementById('btnBuscarNota').addEventListener('click', async function(){
+        const url = document.getElementById('notaUrl').value.trim();
+        const status = document.getElementById('notaStatus');
+        if (!url){ status.textContent = 'Cole a URL da nota primeiro.'; return; }
+        status.textContent = 'Buscando nota…';
+        document.getElementById('btnBuscarNota').disabled = true;
+        try {
+          const res = await fetch('/api/importar-nota', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ url })
+          });
+          const data = await res.json();
+          if (!res.ok || !data.ok){
+            status.textContent = '❌ ' + (data.erro || 'Erro ao buscar nota.');
+            document.getElementById('btnBuscarNota').disabled = false;
+            return;
+          }
+          NOTA_STATE = { fase: 'confirmar', itens: data.itens, mercado: data.mercado, url };
+          renderNota();
+        } catch(e){
+          status.textContent = '❌ Erro de conexão. Tente novamente.';
+          document.getElementById('btnBuscarNota').disabled = false;
+        }
+      });
+
+    } else if (NOTA_STATE.fase === 'confirmar'){
+      const mercadoOptions = ['Max Atacadista','Amigão','Super Bom','Avenida']
+        .map(function(m){ return '<option value="'+m+'"'+(m===NOTA_STATE.mercado?' selected':'')+'>'+m+'</option>'; }).join('');
+      const unOptions = ['un','kg','l'].map(function(u){ return '<option value="'+u+'">'+u+'</option>'; }).join('');
+      const catalogOptions = [['','— não salvar —']].concat(CATALOG.map(function(c){ return [c.id, c.nome]; }))
+        .map(function(p){ return '<option value="'+p[0]+'">'+p[1]+'</option>'; }).join('');
+
+      let linhas = NOTA_STATE.itens.map(function(it, i){
+        const catSelected = it.itemId || '';
+        const catOpts = CATALOG.map(function(c){
+          return '<option value="'+c.id+'"'+(c.id===catSelected?' selected':'')+'>'+c.nome+'</option>';
+        }).join('');
+        return '<tr>'
+          + '<td data-label="Produto da nota" style="font-size:13px;">'+it.nome+'</td>'
+          + '<td data-label="Mapear para"><select data-i="'+i+'" class="nota-map" style="min-width:160px;"><option value="">— não salvar —</option>'+catOpts+'</select></td>'
+          + '<td data-label="Preço (R$)" class="num"><input type="number" class="nota-preco" data-i="'+i+'" value="'+it.valor.toFixed(2)+'" min="0" step="0.01" style="width:90px;"></td>'
+          + '<td data-label="Tamanho"><input type="number" class="nota-tam" data-i="'+i+'" value="1" min="0.001" step="0.001" style="width:70px;"></td>'
+          + '<td data-label="Un"><select class="nota-un" data-i="'+i+'">'+unOptions+'</select></td>'
+          + '</tr>';
+      }).join('');
+
+      panel.innerHTML = '<div class="card">'
+        + '<div class="group-title"><h3>Confirmar itens da nota</h3>'
+        + '<button class="btn ghost" id="btnVoltarNota" style="font-size:12px;">← Voltar</button></div>'
+        + '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">'
+        + '<label style="font-size:13px;color:#5b6b54;">Mercado:</label>'
+        + '<select id="notaMercado" style="width:auto;">'+mercadoOptions+'</select>'
+        + '</div>'
+        + '<p style="font-size:13px;color:#5b6b54;margin:0 0 14px;">Verifique o mapeamento de cada item. Itens marcados como "— não salvar —" serão ignorados. Ajuste o tamanho da embalagem (ex: arroz 5kg → tamanho 5, unidade kg).</p>'
+        + '<table class="compact"><thead><tr><th>Produto da nota</th><th>Mapear para</th><th class="num">Preço R$</th><th class="num">Tamanho</th><th>Un</th></tr></thead><tbody>'
+        + linhas + '</tbody></table>'
+        + '<div style="margin-top:20px;display:flex;gap:12px;align-items:center;">'
+        + '<button class="btn primary" id="btnGravarNota">Salvar no histórico de preços</button>'
+        + '<span id="notaGravarStatus" style="font-size:13px;color:#5b6b54;"></span>'
+        + '</div></div>';
+
+      document.getElementById('btnVoltarNota').addEventListener('click', function(){
+        NOTA_STATE = { fase: 'form', itens: [], mercado: '', url: '' };
+        renderNota();
+      });
+
+      document.getElementById('btnGravarNota').addEventListener('click', async function(){
+        const status = document.getElementById('notaGravarStatus');
+        const mercado = document.getElementById('notaMercado').value;
+        const itensParaGravar = [];
+
+        document.querySelectorAll('.nota-map').forEach(function(sel){
+          const i = sel.getAttribute('data-i');
+          const itemId = sel.value;
+          if (!itemId) return;
+          const preco = parseFloat(document.querySelector('.nota-preco[data-i="'+i+'"]').value) || 0;
+          const tamanho = parseFloat(document.querySelector('.nota-tam[data-i="'+i+'"]').value) || 1;
+          const unidade = document.querySelector('.nota-un[data-i="'+i+'"]').value;
+          itensParaGravar.push({ itemId, valor: preco, tamanho, unidade });
+        });
+
+        if (itensParaGravar.length === 0){
+          status.textContent = 'Mapeie pelo menos um item antes de salvar.';
+          return;
+        }
+
+        status.textContent = 'Salvando…';
+        document.getElementById('btnGravarNota').disabled = true;
+
+        try {
+          const res = await fetch('/api/importar-nota', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ acao: 'gravar', mercado, itens: itensParaGravar })
+          });
+          const data = await res.json();
+          if (!res.ok || !data.ok){
+            status.textContent = '❌ ' + (data.erro || 'Erro ao salvar.');
+            document.getElementById('btnGravarNota').disabled = false;
+            return;
+          }
+          status.textContent = '✅ ' + data.gravados + ' preços salvos!';
+          await loadData();
+          setTimeout(function(){
+            NOTA_STATE = { fase: 'form', itens: [], mercado: '', url: '' };
+            ACTIVE_TAB = 'precos';
+            renderAll();
+          }, 1500);
+        } catch(e){
+          status.textContent = '❌ Erro de conexão.';
+          document.getElementById('btnGravarNota').disabled = false;
+        }
+      });
+    }
+  }
+
   function renderAll(){
     renderTabs();
     if (ACTIVE_TAB === 'estoque') renderEstoque();
     else if (ACTIVE_TAB === 'compras') renderCompras();
     else if (ACTIVE_TAB === 'precos') renderPrecos();
+    else if (ACTIVE_TAB === 'nota') renderNota();
     else if (ACTIVE_TAB === 'comparador') renderComparador();
     else if (ACTIVE_TAB === 'orcamento') renderOrcamento();
   }
