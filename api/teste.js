@@ -1,12 +1,35 @@
-module.exports = function handler(req, res) {
+module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.status(200).json({
-    ok: true,
-    mensagem: 'Function rodando corretamente',
-    metodo: req.method,
-    query: req.query,
-    env_supabase: !!process.env.SUPABASE_SERVICE_KEY,
-    node_version: process.version,
-    timestamp: new Date().toISOString()
-  });
+  
+  const url = req.query.url || 'https://www.nfce.fazenda.sp.gov.br/NFCeConsultaPublica/Paginas/ConsultaQRCode.aspx?p=35260905741430000269651200000378191381243199|2|1|2|6edf6b1d6893b42c0121f07670bb86c049bd41b8';
+
+  try {
+    const resposta = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'pt-BR,pt;q=0.9',
+      },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(12000),
+    });
+
+    const texto = await resposta.text();
+
+    res.status(200).json({
+      ok: true,
+      status_sefaz: resposta.status,
+      headers_resposta: Object.fromEntries(resposta.headers.entries()),
+      primeiros_500_chars: texto.slice(0, 500),
+      tamanho_html: texto.length,
+    });
+
+  } catch(err) {
+    res.status(200).json({
+      ok: false,
+      erro_tipo: err.name,
+      erro_mensagem: err.message,
+      stack: err.stack?.slice(0, 300),
+    });
+  }
 };
