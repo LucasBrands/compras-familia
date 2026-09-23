@@ -722,33 +722,6 @@
       async function buscarNota(url){
         var status = document.getElementById('notaStatus');
         if (!url){ if(status) status.textContent = 'Cole a URL da nota primeiro.'; return; }
-        if(status) status.textContent = 'Buscando nota…';
-        var btn = document.getElementById('btnBuscarNota');
-        if(btn) btn.disabled = true;
-        try {
-          const res = await fetch('/api/importar-nota', {
-            method: 'POST',
-            headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({ url })
-          });
-          const data = await res.json();
-          if (!res.ok || !data.ok){
-            if(status) status.textContent = '❌ ' + (data.erro || 'Erro ao buscar nota.');
-            if(btn) btn.disabled = false;
-            return;
-          }
-          NOTA_STATE = { fase: 'confirmar', itens: data.itens, mercado: data.mercado, url };
-          pararCamera();
-          renderNota();
-        } catch(e){
-          if(status) status.textContent = '❌ Erro de conexão. Tente novamente.';
-          if(btn) btn.disabled = false;
-        }
-      }
-
-      async function buscarNota(url){
-        var status = document.getElementById('notaStatus');
-        if (!url){ if(status) status.textContent = 'Cole a URL da nota primeiro.'; return; }
         if(status) status.innerHTML = '⏳ Buscando nota…';
         var btn = document.getElementById('btnBuscarNota');
         if(btn) btn.disabled = true;
