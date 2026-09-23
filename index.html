@@ -624,7 +624,7 @@
     if (NOTA_STATE.fase === 'form'){
       panel.innerHTML = '<div class="card">'
         + '<div class="group-title"><h3>Importar nota fiscal pelo QR Code</h3></div>'
-        + '<p style="font-size:14px;color:#5b6b54;margin:0 0 18px;">Aponte a câmera para o QR code da nota fiscal. A nota vai abrir no navegador para você conferir os itens e preços — depois é só registrar na aba <strong style="color:var(--text-dark);">Preços</strong>.</p>'
+        + '<p style="font-size:14px;color:#5b6b54;margin:0 0 18px;">Aponte a câmera para o QR code da nota fiscal. Os itens e preços são importados automaticamente.</p>'
 
         // Área da câmera
         + '<div id="qrArea" style="display:none;margin-bottom:16px;">'
@@ -640,16 +640,11 @@
         + '<button class="btn primary" id="btnAbrirCamera">📷 Escanear QR Code</button>'
         + '<span style="align-self:center;color:var(--text-lo);font-size:13px;">ou</span>'
         + '</div>'
-        + '<div style="background:rgba(32,41,31,0.06);border-radius:8px;padding:14px 16px;margin-top:4px;">'
-        + '<p style="margin:0;font-size:13px;color:#5b6b54;line-height:1.6;">'
-        + '<strong style="color:var(--text-dark);">Como funciona:</strong><br>'
-        + '1. Clique em "Escanear QR Code" e aponte para a nota<br>'
-        + '2. A nota da SEFAZ abre automaticamente no navegador<br>'
-        + '3. Confira os itens e preços na tela<br>'
-        + '4. Volte aqui e registre os preços na aba <strong style="color:var(--text-dark);">Preços</strong>'
-        + '</p></div>'
-        + '<input type="hidden" id="notaUrl">'
-        + '<span id="notaStatus" style="font-size:13px;color:#5b6b54;display:block;margin-top:12px;"></span>'
+        + '<div><label style="font-size:11.5px;color:#5b6b54;display:block;margin-bottom:4px;">Ou cole a URL da nota manualmente</label>'
+        + '<input type="text" id="notaUrl" placeholder="https://www.nfce.fazenda.sp.gov.br/..." style="width:100%;"></div>'
+        + '<div style="display:flex;gap:10px;align-items:center;">'
+        + '<button class="btn ghost" id="btnBuscarNota">Buscar pela URL</button>'
+        + '<span id="notaStatus" style="font-size:13px;color:#5b6b54;"></span>'
         + '</div></div></div>';
 
       // Lógica da câmera + leitor QR (usando jsQR via CDN)
@@ -681,11 +676,7 @@
             pararCamera();
             var urlInput = document.getElementById('notaUrl');
             if (urlInput) urlInput.value = code.data;
-            // Abre a nota direto no navegador (SEFAZ bloqueia fetch de servidor)
-            window.open(code.data, '_blank');
-            // Mostra instrução para o usuário
-            var notaStatus = document.getElementById('notaStatus');
-            if (notaStatus) notaStatus.innerHTML = '✅ Nota aberta! Confira os itens e preços, depois registre manualmente na aba <strong>Preços</strong>.';
+            buscarNota(code.data);
             return;
           }
           if (status) status.textContent = 'Procurando QR code…';
@@ -755,7 +746,37 @@
         }
       }
 
-      // botão de busca manual removido — SEFAZ bloqueia fetch de servidor
+      async function buscarNota(url){
+        var status = document.getElementById('notaStatus');
+        if (!url){ if(status) status.textContent = 'Cole a URL da nota primeiro.'; return; }
+        if(status) status.innerHTML = '⏳ Buscando nota…';
+        var btn = document.getElementById('btnBuscarNota');
+        if(btn) btn.disabled = true;
+        try {
+          const res = await fetch('/api/importar-nota', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ url })
+          });
+          const data = await res.json();
+          if (!res.ok || !data.ok){
+            if(status) status.innerHTML = '❌ ' + (data.erro || 'Erro ao buscar nota.')
+              + (data.sugestao ? '<br><small>'+data.sugestao+'</small>' : '');
+            if(btn) btn.disabled = false;
+            return;
+          }
+          NOTA_STATE = { fase: 'confirmar', itens: data.itens, mercado: data.mercado, url };
+          renderNota();
+        } catch(e){
+          if(status) status.textContent = '❌ Erro de conexão. Tente novamente.';
+          if(btn) btn.disabled = false;
+        }
+      }
+
+      document.getElementById('btnBuscarNota') && document.getElementById('btnBuscarNota').addEventListener('click', function(){
+        const url = document.getElementById('notaUrl').value.trim();
+        buscarNota(url);
+      });
 
     } else if (NOTA_STATE.fase === 'confirmar'){
       const mercadoOptions = ['Max Atacadista','Amigão','Super Bom','Avenida']
