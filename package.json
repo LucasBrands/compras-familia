@@ -1,0 +1,11 @@
+{
+  "name": "compras-familia",
+  "version": "1.0.0",
+  "description": "App de compras inteligentes da família",
+  "scripts": {
+    "start": "echo ok"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0"
+  }
+}
