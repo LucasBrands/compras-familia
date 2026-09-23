@@ -14,22 +14,12 @@ module.exports = async function handler(req, res) {
       signal: AbortSignal.timeout(12000),
     });
 
-    const texto = await resposta.text();
-
-    res.status(200).json({
-      ok: true,
-      status_sefaz: resposta.status,
-      headers_resposta: Object.fromEntries(resposta.headers.entries()),
-      primeiros_500_chars: texto.slice(0, 500),
-      tamanho_html: texto.length,
-    });
+    const html = await resposta.text();
+    // Retorna o HTML completo para análise
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.status(200).send(html);
 
   } catch(err) {
-    res.status(200).json({
-      ok: false,
-      erro_tipo: err.name,
-      erro_mensagem: err.message,
-      stack: err.stack?.slice(0, 300),
-    });
+    res.status(500).json({ erro: err.message });
   }
 };
