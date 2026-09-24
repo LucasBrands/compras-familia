@@ -81,10 +81,28 @@ function mapearItem(nome) {
   return null;
 }
 
+const MERCADO_MAP = [
+  { keys: ['superbom','super bom','superbom de assis'], nome: 'Super Bom' },
+  { keys: ['amigao','amigão','supermercado amigao'], nome: 'Amigão' },
+  { keys: ['max atacadista','max atac','muffato'], nome: 'Max Atacadista' },
+  { keys: ['avenida','sup avenida','supermercado avenida'], nome: 'Avenida' },
+];
+
+function normalizarMercado(nomeRaw) {
+  const lower = nomeRaw.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  for (const entry of MERCADO_MAP) {
+    for (const key of entry.keys) {
+      const keyNorm = key.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      if (lower.includes(keyNorm)) return entry.nome;
+    }
+  }
+  return nomeRaw; // retorna o nome original se não reconheceu
+}
+
 function extrairMercado(html) {
   const m = html.match(/<div[^>]*id="u20"[^>]*class="txtTopo"[^>]*>([^<]+)<\/div>/i)
     || html.match(/<div[^>]*class="txtTopo"[^>]*>([^<]+)<\/div>/i);
-  if (m) return m[1].trim();
+  if (m) return normalizarMercado(m[1].trim());
   return 'Não identificado';
 }
 
