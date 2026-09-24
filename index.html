@@ -758,32 +758,40 @@
       const catalogOptions = [['','— não salvar —']].concat(CATALOG.map(function(c){ return [c.id, c.nome]; }))
         .map(function(p){ return '<option value="'+p[0]+'">'+p[1]+'</option>'; }).join('');
 
+      const mapeados = NOTA_STATE.itens.filter(function(it){ return it.itemId; }).length;
+      const total = NOTA_STATE.itens.length;
+
       let linhas = NOTA_STATE.itens.map(function(it, i){
-        const catSelected = it.itemId || '';
         const catOpts = CATALOG.map(function(c){
-          return '<option value="'+c.id+'"'+(c.id===catSelected?' selected':'')+'>'+c.nome+'</option>';
+          return '<option value="'+c.id+'"'+(c.id===it.itemId?' selected':'')+'>'+c.nome+'</option>';
         }).join('');
-        return '<tr>'
-          + '<td data-label="Produto da nota" style="font-size:13px;">'+it.nome+'</td>'
-          + '<td data-label="Mapear para"><select data-i="'+i+'" class="nota-map" style="min-width:160px;"><option value="">— não salvar —</option>'+catOpts+'</select></td>'
-          + '<td data-label="Preço (R$)" class="num"><input type="number" class="nota-preco" data-i="'+i+'" value="'+it.valor.toFixed(2)+'" min="0" step="0.01" style="width:90px;"></td>'
-          + '<td data-label="Tamanho"><input type="number" class="nota-tam" data-i="'+i+'" value="1" min="0.001" step="0.001" style="width:70px;"></td>'
-          + '<td data-label="Un"><select class="nota-un" data-i="'+i+'">'+unOptions+'</select></td>'
+        const vlUnit = (it.vlUnit || 0).toFixed(2);
+        const qtd = (it.qtd || 1);
+        const rowStyle = it.itemId ? '' : ' style="opacity:0.5;"';
+        return '<tr'+rowStyle+'>'
+          + '<td data-label="Produto" style="font-size:13px;"><strong>'+it.nome+'</strong>'
+          + '<br><span style="font-size:11px;color:#8a9a83;">'+qtd+' '+it.unidade+' × R$ '+vlUnit+'/'+it.unidade+' = R$ '+(it.vlTotal||0).toFixed(2)+'</span></td>'
+          + '<td data-label="Salvar como"><select data-i="'+i+'" class="nota-map" style="min-width:150px;font-size:13px;"><option value="">— não salvar —</option>'+catOpts+'</select></td>'
+          + '<td data-label="R$/un" class="num" style="font-size:13px;font-family:\'IBM Plex Mono\',monospace;">R$ '+vlUnit+'</td>'
+          + '<input type="hidden" class="nota-vlunit" data-i="'+i+'" value="'+vlUnit+'">'
+          + '<input type="hidden" class="nota-qtd" data-i="'+i+'" value="'+qtd+'">'
+          + '<input type="hidden" class="nota-un" data-i="'+i+'" value="'+(it.unidade||'un')+'">'
           + '</tr>';
       }).join('');
 
       panel.innerHTML = '<div class="card">'
         + '<div class="group-title"><h3>Confirmar itens da nota</h3>'
         + '<button class="btn ghost" id="btnVoltarNota" style="font-size:12px;">← Voltar</button></div>'
-        + '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">'
+        + '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px;">'
         + '<label style="font-size:13px;color:#5b6b54;">Mercado:</label>'
         + '<select id="notaMercado" style="width:auto;">'+mercadoOptions+'</select>'
+        + '<span style="font-size:12.5px;color:#5b6b54;margin-left:8px;">'+mapeados+' de '+total+' itens mapeados automaticamente</span>'
         + '</div>'
-        + '<p style="font-size:13px;color:#5b6b54;margin:0 0 14px;">Verifique o mapeamento de cada item. Itens marcados como "— não salvar —" serão ignorados. Ajuste o tamanho da embalagem (ex: arroz 5kg → tamanho 5, unidade kg).</p>'
-        + '<table class="compact"><thead><tr><th>Produto da nota</th><th>Mapear para</th><th class="num">Preço R$</th><th class="num">Tamanho</th><th>Un</th></tr></thead><tbody>'
+        + '<p style="font-size:12.5px;color:#5b6b54;margin:0 0 14px;">Os itens já reconhecidos estão mapeados. Ajuste os que ficaram em "— não salvar —" se quiser incluí-los. Os preços vêm direto da nota (R$ por kg ou por unidade).</p>'
+        + '<table class="compact"><thead><tr><th>Produto da nota</th><th>Salvar como</th><th class="num">R$/un</th></tr></thead><tbody>'
         + linhas + '</tbody></table>'
-        + '<div style="margin-top:20px;display:flex;gap:12px;align-items:center;">'
-        + '<button class="btn primary" id="btnGravarNota">Salvar no histórico de preços</button>'
+        + '<div style="margin-top:20px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;">'
+        + '<button class="btn primary" id="btnGravarNota">💾 Salvar '+mapeados+' itens no histórico</button>'
         + '<span id="notaGravarStatus" style="font-size:13px;color:#5b6b54;"></span>'
         + '</div></div>';
 
@@ -801,18 +809,19 @@
           const i = sel.getAttribute('data-i');
           const itemId = sel.value;
           if (!itemId) return;
-          const preco = parseFloat(document.querySelector('.nota-preco[data-i="'+i+'"]').value) || 0;
-          const tamanho = parseFloat(document.querySelector('.nota-tam[data-i="'+i+'"]').value) || 1;
-          const unidade = document.querySelector('.nota-un[data-i="'+i+'"]').value;
-          itensParaGravar.push({ itemId, valor: preco, tamanho, unidade });
+          const vlUnit = parseFloat(document.querySelector('.nota-vlunit[data-i="'+i+'"]').value) || 0;
+          const qtd = parseFloat(document.querySelector('.nota-qtd[data-i="'+i+'"]').value) || 1;
+          const unidade = document.querySelector('.nota-un[data-i="'+i+'"]').value || 'un';
+          if (vlUnit <= 0) return;
+          itensParaGravar.push({ itemId, vlUnit, tamanho: qtd, unidade });
         });
 
         if (itensParaGravar.length === 0){
-          status.textContent = 'Mapeie pelo menos um item antes de salvar.';
+          status.textContent = 'Nenhum item mapeado para salvar.';
           return;
         }
 
-        status.textContent = 'Salvando…';
+        status.textContent = '⏳ Salvando…';
         document.getElementById('btnGravarNota').disabled = true;
 
         try {
