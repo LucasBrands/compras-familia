@@ -123,6 +123,12 @@
   .tag.ok{ background:rgba(108,154,91,0.16); color:#3f6a34; }
   .tag.repor{ background:rgba(227,162,60,0.22); color:#8a5a12; }
   .tag.critico{ background:rgba(182,81,47,0.16); color:#8f3a20; }
+  .tag.excepcional{ background:rgba(227,162,60,0.28); color:#8a5a12; font-weight:700; }
+  .tag.muitoboa{ background:rgba(108,154,91,0.20); color:#3f6a34; }
+  .tag.bom{ background:rgba(108,154,91,0.12); color:#4c7a3f; }
+  .tag.normal{ background:rgba(90,100,85,0.10); color:#5b6b54; }
+  .tag.ruim{ background:rgba(182,81,47,0.14); color:#8f3a20; }
+  .tag.novo{ background:rgba(90,100,85,0.08); color:#8a9a83; }
 
   button.btn{
     appearance:none; border:none; cursor:pointer; border-radius:8px;
@@ -264,8 +270,25 @@
     {id:'precos', label:'Preços'},
     {id:'nota', label:'📄 Importar Nota'},
     {id:'comparador', label:'Comparador'},
+    {id:'alertas', label:'🔥 Alertas'},
     {id:'orcamento', label:'Orçamento'}
   ];
+
+  // ---------- Classificação de preço (oferta) ----------
+  function classificarPreco(itemId, valorAtual, idsExcluir){
+    idsExcluir = idsExcluir || [];
+    const historico = STATE.precos
+      .filter(function(p){ return p.itemId === itemId && idsExcluir.indexOf(p.id) === -1; })
+      .map(function(p){ return p.preco / p.tamanho; });
+    if (historico.length === 0) return { emoji:'🆕', label:'Primeiro registro deste item', classe:'novo' };
+    const min = Math.min.apply(null, historico);
+    const media = historico.reduce(function(s,v){ return s+v; }, 0) / historico.length;
+    if (valorAtual <= min) return { emoji:'🔥', label:'Oferta excepcional — menor preço já visto! Vale estocar.', classe:'excepcional' };
+    if (valorAtual <= media * 0.85) return { emoji:'🟢', label:'Oferta muito boa — vale comprar quantidade maior', classe:'muitoboa' };
+    if (valorAtual <= media * 0.95) return { emoji:'🟡', label:'Preço bom', classe:'bom' };
+    if (valorAtual <= media * 1.05) return { emoji:'⚪', label:'Preço normal', classe:'normal' };
+    return { emoji:'🔴', label:'Preço alto — evite estocar agora', classe:'ruim' };
+  }
 
   let STATE = { estoque: {}, precos: [] };
   let ACTIVE_TAB = 'estoque';
@@ -383,9 +406,22 @@
   // Render
   function renderTabs(){
     const criticos = CATALOG.filter(function(it){ return itemStatus(it) !== 'ok'; }).length;
+
+    let ofertas = 0;
+    CATALOG.forEach(function(it){
+      const entradas = STATE.precos.filter(function(p){ return p.itemId === it.id; })
+        .slice().sort(function(a,b){ return (b.data||'').localeCompare(a.data||''); });
+      if (entradas.length === 0) return;
+      const ultima = entradas[0];
+      const c = classificarPreco(it.id, ultima.preco / ultima.tamanho, [ultima.id]);
+      if (c.classe === 'excepcional' || c.classe === 'muitoboa') ofertas++;
+    });
+
     const nav = document.getElementById('tabs');
     nav.innerHTML = TABS.map(function(t){
-      const badge = (t.id === 'compras' && criticos > 0) ? '<span class="count">'+criticos+'</span>' : '';
+      let badge = '';
+      if (t.id === 'compras' && criticos > 0) badge = '<span class="count">'+criticos+'</span>';
+      if (t.id === 'alertas' && ofertas > 0) badge = '<span class="count">'+ofertas+'</span>';
       return '<button data-tab="'+t.id+'" class="'+(ACTIVE_TAB===t.id?'active':'')+'">'+t.label+badge+'</button>';
     }).join('');
     Array.prototype.forEach.call(nav.querySelectorAll('button'), function(btn){
@@ -501,15 +537,17 @@
         const it = CATALOG.find(function(c){ return c.id === itemId; });
         if (!it) return;
         html += '<div class="group-title"><h3 style="font-size:15px;">'+it.nome+'</h3></div>';
-        html += '<table class="compact"><thead><tr><th>Data</th><th>Mercado</th><th class="num">Preço</th><th class="num">Embalagem</th><th class="num">R$/'+it.un.replace('pacote','un').replace('dúzia','un').replace('fardo','un').replace('caixa','un')+'</th><th></th></tr></thead><tbody>';
+        html += '<table class="compact"><thead><tr><th>Data</th><th>Mercado</th><th class="num">Preço</th><th class="num">Embalagem</th><th class="num">R$/'+it.un.replace('pacote','un').replace('dúzia','un').replace('fardo','un').replace('caixa','un')+'</th><th>Classificação</th><th></th></tr></thead><tbody>';
         byItem[itemId].forEach(function(p){
           const unit = p.preco / p.tamanho;
+          const c = classificarPreco(itemId, unit, [p.id]);
           html += '<tr>'
             + '<td data-label="Data">'+(p.data||'—')+'</td>'
             + '<td data-label="Mercado">'+p.mercado+'</td>'
             + '<td data-label="Preço" class="num">'+fmtBRL(p.preco)+'</td>'
             + '<td data-label="Embalagem" class="num">'+p.tamanho+' '+p.unidade+'</td>'
             + '<td data-label="Unitário" class="num">'+fmtBRL(unit)+'</td>'
+            + '<td data-label="Classificação"><span class="tag '+c.classe+'" title="'+c.label+'">'+c.emoji+' '+c.label+'</span></td>'
             + '<td class="no-print"><button class="btn ghost" data-del="'+p.id+'" style="padding:4px 9px;font-size:12px;">remover</button></td>'
             + '</tr>';
         });
@@ -533,9 +571,14 @@
         data: document.getElementById('priceDateDefault').value
       };
       if (!entry.preco || !entry.tamanho) return;
+      const unit = entry.preco / entry.tamanho;
+      const c = classificarPreco(entry.itemId, unit, []);
       STATE.precos.push(entry);
       savePreco(entry);
       renderAll();
+      if (c.classe === 'excepcional' || c.classe === 'muitoboa'){
+        setTimeout(function(){ alert(c.emoji + ' ' + c.label); }, 150);
+      }
     });
 
     Array.prototype.forEach.call(document.querySelectorAll('[data-del]'), function(btn){
@@ -546,6 +589,65 @@
         renderAll();
       });
     });
+  }
+
+  // ---------- Render: Alertas de oferta ----------
+  function renderAlertas(){
+    const comHistorico = CATALOG.filter(function(it){
+      return STATE.precos.some(function(p){ return p.itemId === it.id; });
+    });
+
+    if (comHistorico.length === 0){
+      document.getElementById('panel').innerHTML = '<div class="empty">Assim que você registrar preços (manualmente ou importando notas), os itens em oferta aparecem aqui automaticamente.</div>';
+      return;
+    }
+
+    const linhas = comHistorico.map(function(it){
+      const entradas = STATE.precos.filter(function(p){ return p.itemId === it.id; })
+        .slice().sort(function(a,b){ return (b.data||'').localeCompare(a.data||''); });
+      const ultima = entradas[0];
+      const unit = ultima.preco / ultima.tamanho;
+      const c = classificarPreco(it.id, unit, [ultima.id]);
+      return { it: it, ultima: ultima, unit: unit, c: c };
+    });
+
+    const rank = { excepcional:0, muitoboa:1, bom:2, normal:3, novo:4, ruim:5 };
+    linhas.sort(function(a,b){ return rank[a.c.classe] - rank[b.c.classe]; });
+
+    const destaques = linhas.filter(function(l){ return l.c.classe === 'excepcional' || l.c.classe === 'muitoboa'; });
+
+    let html = '';
+    if (destaques.length > 0){
+      html += '<div class="card" style="margin-bottom:16px;">'
+        + '<div class="group-title"><h3>🔥 Vale comprar/estocar agora</h3></div>'
+        + '<table class="compact"><thead><tr><th>Produto</th><th>Mercado</th><th class="num">Preço</th><th>Última data</th><th>Classificação</th></tr></thead><tbody>'
+        + destaques.map(function(l){
+            return '<tr>'
+              + '<td data-label="Produto">'+l.it.nome+'</td>'
+              + '<td data-label="Mercado">'+l.ultima.mercado+'</td>'
+              + '<td data-label="Preço" class="num">'+fmtBRL(l.unit)+' /'+l.it.un+'</td>'
+              + '<td data-label="Data">'+(l.ultima.data||'—')+'</td>'
+              + '<td data-label="Classificação"><span class="tag '+l.c.classe+'">'+l.c.emoji+' '+l.c.label+'</span></td>'
+              + '</tr>';
+          }).join('')
+        + '</tbody></table></div>';
+    } else {
+      html += '<div class="empty" style="margin-bottom:16px;">Nenhuma oferta excepcional registrada no momento — os últimos preços estão dentro da média.</div>';
+    }
+
+    html += '<div class="group-title"><h3 style="font-size:15px;">Todos os itens com histórico</h3></div>';
+    html += '<div class="card"><table class="compact"><thead><tr><th>Produto</th><th>Mercado</th><th class="num">Último preço</th><th>Classificação</th></tr></thead><tbody>'
+      + linhas.map(function(l){
+          return '<tr>'
+            + '<td data-label="Produto">'+l.it.nome+'</td>'
+            + '<td data-label="Mercado">'+l.ultima.mercado+'</td>'
+            + '<td data-label="Preço" class="num">'+fmtBRL(l.unit)+' /'+l.it.un+'</td>'
+            + '<td data-label="Classificação"><span class="tag '+l.c.classe+'">'+l.c.emoji+' '+l.c.label+'</span></td>'
+            + '</tr>';
+        }).join('')
+      + '</tbody></table></div>';
+
+    document.getElementById('panel').innerHTML = html;
   }
 
   function renderComparador(){
@@ -839,7 +941,21 @@
             document.getElementById('btnGravarNota').disabled = false;
             return;
           }
-          status.textContent = '✅ ' + data.gravados + ' preços salvos!';
+
+          // Classifica os itens salvos ANTES de recarregar (compara contra o histórico anterior)
+          const ofertas = itensParaGravar
+            .map(function(it){
+              const nome = (CATALOG.find(function(c){ return c.id === it.itemId; }) || {}).nome || it.itemId;
+              const c = classificarPreco(it.itemId, it.vlUnit, []);
+              return { nome: nome, c: c };
+            })
+            .filter(function(x){ return x.c.classe === 'excepcional' || x.c.classe === 'muitoboa'; });
+
+          let msg = '✅ ' + data.gravados + ' preços salvos, estoque atualizado automaticamente!';
+          if (ofertas.length > 0){
+            msg += '<br>' + ofertas.map(function(o){ return o.c.emoji + ' ' + o.nome; }).join(' · ');
+          }
+          status.innerHTML = msg;
           await loadData();
           setTimeout(function(){
             NOTA_STATE = { fase: 'form', itens: [], mercado: '', url: '' };
@@ -861,6 +977,7 @@
     else if (ACTIVE_TAB === 'precos') renderPrecos();
     else if (ACTIVE_TAB === 'nota') renderNota();
     else if (ACTIVE_TAB === 'comparador') renderComparador();
+    else if (ACTIVE_TAB === 'alertas') renderAlertas();
     else if (ACTIVE_TAB === 'orcamento') renderOrcamento();
   }
 
