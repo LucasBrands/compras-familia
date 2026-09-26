@@ -174,7 +174,30 @@ module.exports = async function handler(req, res) {
       if (registros.length === 0) return res.status(400).json({ erro: 'Nenhum item válido para gravar.' });
       const { error } = await supabase.from('precos').insert(registros);
       if (error) throw error;
-      return res.status(200).json({ ok: true, gravados: registros.length });
+
+      // Atualiza o estoque automaticamente com a quantidade comprada
+      const incrementos = {};
+      registros.forEach(function(r){
+        incrementos[r.item_id] = (incrementos[r.item_id] || 0) + Number(r.tamanho);
+      });
+
+      let itensEstoqueAtualizados = 0;
+      for (const [itemId, qtdComprada] of Object.entries(incrementos)) {
+        try {
+          const existente = await supabase.from('estoque').select('id, quantidade').eq('item_id', itemId).single();
+          if (existente.data) {
+            await supabase.from('estoque')
+              .update({ quantidade: Number(existente.data.quantidade) + qtdComprada, atualizado_em: new Date().toISOString() })
+              .eq('id', existente.data.id);
+          } else {
+            await supabase.from('estoque')
+              .insert({ id: 'e_' + itemId + '_' + Date.now(), item_id: itemId, quantidade: qtdComprada });
+          }
+          itensEstoqueAtualizados++;
+        } catch (e) { /* segue mesmo se um item falhar */ }
+      }
+
+      return res.status(200).json({ ok: true, gravados: registros.length, estoqueAtualizado: itensEstoqueAtualizados });
     } catch (err) {
       return res.status(500).json({ erro: 'Erro ao gravar no banco.', detalhe: err.message });
     }
