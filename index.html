@@ -208,7 +208,7 @@
   const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
   // Catálogo (igual antes)
-  const CATALOG = [
+  const DEFAULT_CATALOG = [
     {id:'arroz', nome:'Arroz 5kg', cat:'Alimentação básica', un:'pacote', min:1, max:3, mercado:'max'},
     {id:'feijao', nome:'Feijão 1kg', cat:'Alimentação básica', un:'pacote', min:2, max:8, mercado:'max'},
     {id:'macarrao', nome:'Macarrão', cat:'Alimentação básica', un:'pacote', min:3, max:10, mercado:'max'},
@@ -263,6 +263,13 @@
     {id:'pilhas', nome:'Pilhas/lâmpadas', cat:'Papelaria e doméstico', un:'un', min:0, max:2, mercado:'max'},
   ];
 
+  // CATALOG = itens ativos (usados em Estoque/Compras/Preços/etc.)
+  // CATALOG_ALL = todos os itens, incluindo inativos (usado na aba Catálogo)
+  // Ambos começam com o padrão embutido e são substituídos pelo conteúdo do Supabase assim que carrega.
+  let CATALOG = DEFAULT_CATALOG.map(function(it){ return Object.assign({ativo:true}, it); });
+  let CATALOG_ALL = CATALOG.slice();
+  let usandoCatalogoPadrao = true;
+
   const MERCADOS = ['Max Atacadista', 'Amigão', 'Super Bom', 'Avenida'];
   const TABS = [
     {id:'estoque', label:'Estoque'},
@@ -271,7 +278,8 @@
     {id:'nota', label:'📄 Importar Nota'},
     {id:'comparador', label:'Comparador'},
     {id:'alertas', label:'🔥 Alertas'},
-    {id:'orcamento', label:'Orçamento'}
+    {id:'orcamento', label:'Orçamento'},
+    {id:'catalogo', label:'🗂️ Catálogo'}
   ];
 
   // ---------- Classificação de preço (oferta) ----------
@@ -319,13 +327,31 @@
   async function loadData(){
     try {
       isLoading = true;
-      const [estoqueRes, precosRes] = await Promise.all([
+      const [estoqueRes, precosRes, catalogoRes] = await Promise.all([
         supabase.from('estoque').select('*'),
-        supabase.from('precos').select('*')
+        supabase.from('precos').select('*'),
+        supabase.from('catalogo').select('*')
       ]);
 
       if (estoqueRes.error) throw estoqueRes.error;
       if (precosRes.error) throw precosRes.error;
+
+      if (!catalogoRes.error && catalogoRes.data && catalogoRes.data.length > 0){
+        CATALOG_ALL = catalogoRes.data.map(function(r){
+          return {
+            id: r.id, nome: r.nome, cat: r.categoria, un: r.unidade,
+            min: Number(r.minimo), max: Number(r.maximo), mercado: r.mercado,
+            ativo: r.ativo !== false
+          };
+        }).sort(function(a,b){ return a.cat.localeCompare(b.cat) || a.nome.localeCompare(b.nome); });
+        CATALOG = CATALOG_ALL.filter(function(it){ return it.ativo; });
+        usandoCatalogoPadrao = false;
+      } else {
+        // Tabela catalogo ainda não existe ou está vazia — usa o padrão embutido (somente leitura)
+        CATALOG_ALL = DEFAULT_CATALOG.map(function(it){ return Object.assign({ativo:true}, it); });
+        CATALOG = CATALOG_ALL.slice();
+        usandoCatalogoPadrao = true;
+      }
 
       STATE.estoque = {};
       CATALOG.forEach(function(it){ STATE.estoque[it.id] = 0; });
@@ -400,6 +426,49 @@
       await supabase.from('precos').delete().eq('id', id);
     } catch(err){
       console.error('Erro ao deletar preço:', err);
+    }
+  }
+
+  // ---------- CRUD do catálogo de produtos ----------
+  function slugify(nome){
+    let s = nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
+    if (!s) s = 'item';
+    let id = s, n = 1;
+    while (CATALOG_ALL.some(function(c){ return c.id === id; })){ n++; id = s + '_' + n; }
+    return id;
+  }
+
+  async function catalogoAdicionar(item){
+    const id = slugify(item.nome);
+    const novo = { id: id, nome: item.nome, cat: item.categoria, un: item.unidade, min: item.min, max: item.max, mercado: item.mercado, ativo: true };
+    CATALOG_ALL.push(novo);
+    CATALOG = CATALOG_ALL.filter(function(c){ return c.ativo; });
+    if (!usandoCatalogoPadrao){
+      try {
+        await supabase.from('catalogo').insert({
+          id: id, nome: item.nome, categoria: item.categoria, unidade: item.unidade,
+          minimo: item.min, maximo: item.max, mercado: item.mercado, ativo: true
+        });
+      } catch(err){ console.error('Erro ao adicionar item no catálogo:', err); }
+    }
+    return id;
+  }
+
+  async function catalogoAtualizar(id, camposSupabase){
+    if (usandoCatalogoPadrao) return;
+    try {
+      await supabase.from('catalogo').update(camposSupabase).eq('id', id);
+    } catch(err){ console.error('Erro ao atualizar item do catálogo:', err); }
+  }
+
+  async function catalogoExcluir(id){
+    CATALOG_ALL = CATALOG_ALL.filter(function(c){ return c.id !== id; });
+    CATALOG = CATALOG_ALL.filter(function(c){ return c.ativo; });
+    if (!usandoCatalogoPadrao){
+      try {
+        await supabase.from('catalogo').delete().eq('id', id);
+      } catch(err){ console.error('Erro ao excluir item do catálogo:', err); }
     }
   }
 
@@ -717,6 +786,147 @@
     document.getElementById('panel').innerHTML = html;
   }
 
+  // ---------- Render: Catálogo de produtos ----------
+  function renderCatalogo(){
+    const panel = document.getElementById('panel');
+    const categorias = Array.from(new Set(CATALOG_ALL.map(function(c){ return c.cat; })));
+
+    let html = '';
+
+    if (usandoCatalogoPadrao){
+      html += '<div class="empty" style="margin-bottom:16px;">'
+        + 'A tabela <strong>catalogo</strong> ainda não existe no seu Supabase — por enquanto a lista é a padrão embutida no app (só leitura). '
+        + 'Rode o script de migração (<span class="mono">migracao_catalogo.sql</span>) no SQL Editor do Supabase pra poder adicionar, editar e excluir produtos de verdade.'
+        + '</div>';
+    }
+
+    html += '<div class="card" style="margin-bottom:16px;">'
+      + '<div class="group-title"><h3>Adicionar produto</h3></div>'
+      + '<form id="catalogoForm" style="display:grid;grid-template-columns:1.6fr 1.3fr .8fr .6fr .6fr 1.1fr auto;gap:10px;align-items:end;">'
+      + '<div><label style="font-size:11px;color:#5b6b54;display:block;margin-bottom:3px;">Nome</label><input type="text" name="nome" required placeholder="ex: Água sanitária"></div>'
+      + '<div><label style="font-size:11px;color:#5b6b54;display:block;margin-bottom:3px;">Categoria</label><input type="text" name="categoria" list="catListaCategorias" required placeholder="ex: Limpeza"></div>'
+      + '<div><label style="font-size:11px;color:#5b6b54;display:block;margin-bottom:3px;">Unidade</label><input type="text" name="unidade" value="un" required></div>'
+      + '<div><label style="font-size:11px;color:#5b6b54;display:block;margin-bottom:3px;">Mín</label><input type="number" name="min" value="0" min="0" step="0.01"></div>'
+      + '<div><label style="font-size:11px;color:#5b6b54;display:block;margin-bottom:3px;">Máx</label><input type="number" name="max" value="1" min="0" step="0.01"></div>'
+      + '<div><label style="font-size:11px;color:#5b6b54;display:block;margin-bottom:3px;">Comprar em</label><select name="mercado">'
+        + '<option value="max">Max Atacadista (estoque)</option>'
+        + '<option value="semanal">Semanal (perecível)</option>'
+        + '</select></div>'
+      + '<div><button class="btn primary" type="submit">+ Adicionar</button></div>'
+      + '</form>'
+      + '<datalist id="catListaCategorias">' + categorias.map(function(c){ return '<option value="'+c+'">'; }).join('') + '</datalist>'
+      + '<span id="catalogoAddStatus" style="font-size:13px;color:#5b6b54;display:block;margin-top:10px;"></span>'
+      + '</div>';
+
+    const byCat = groupBy(CATALOG_ALL, function(it){ return it.cat; });
+    html += '<div class="card">';
+    Object.keys(byCat).sort().forEach(function(cat){
+      html += '<div class="group-title"><h3 style="font-size:15px;">'+cat+'</h3></div>';
+      html += '<table class="compact"><thead><tr><th>Nome</th><th class="num">Mín</th><th class="num">Máx</th><th>Comprar em</th><th>Ativo</th><th></th></tr></thead><tbody>';
+      byCat[cat].forEach(function(it){
+        const rowStyle = it.ativo ? '' : ' style="opacity:0.45;"';
+        html += '<tr'+rowStyle+' data-row="'+it.id+'">'
+          + '<td data-label="Nome"><input type="text" class="cat-nome" data-id="'+it.id+'" value="'+it.nome+'" style="min-width:170px;"></td>'
+          + '<td data-label="Mín" class="num"><input type="number" class="cat-min" data-id="'+it.id+'" value="'+it.min+'" min="0" step="0.01"></td>'
+          + '<td data-label="Máx" class="num"><input type="number" class="cat-max" data-id="'+it.id+'" value="'+it.max+'" min="0" step="0.01"></td>'
+          + '<td data-label="Comprar em"><select class="cat-mercado" data-id="'+it.id+'">'
+            + '<option value="max"'+(it.mercado==='max'?' selected':'')+'>Max Atacadista</option>'
+            + '<option value="semanal"'+(it.mercado==='semanal'?' selected':'')+'>Semanal</option>'
+            + '</select></td>'
+          + '<td data-label="Ativo"><input type="checkbox" class="cat-ativo" data-id="'+it.id+'" '+(it.ativo?'checked':'')+'></td>'
+          + '<td class="no-print"><button class="btn ghost" data-excluir="'+it.id+'" style="font-size:12px;padding:4px 9px;">excluir</button></td>'
+          + '</tr>';
+      });
+      html += '</tbody></table>';
+    });
+    html += '</div>';
+
+    panel.innerHTML = html;
+
+    // Adicionar novo produto
+    document.getElementById('catalogoForm').addEventListener('submit', async function(ev){
+      ev.preventDefault();
+      const fd = new FormData(ev.target);
+      const status = document.getElementById('catalogoAddStatus');
+      const item = {
+        nome: (fd.get('nome')||'').trim(),
+        categoria: (fd.get('categoria')||'Outros').trim(),
+        unidade: (fd.get('unidade')||'un').trim(),
+        min: parseFloat(fd.get('min')) || 0,
+        max: parseFloat(fd.get('max')) || 1,
+        mercado: fd.get('mercado')
+      };
+      if (!item.nome){ status.textContent = 'Digite o nome do produto.'; return; }
+      status.textContent = '⏳ Salvando…';
+      await catalogoAdicionar(item);
+      status.textContent = '✅ Produto adicionado!';
+      renderAll();
+    });
+
+    // Editar nome
+    document.querySelectorAll('.cat-nome').forEach(function(inp){
+      inp.addEventListener('change', function(){
+        const id = inp.getAttribute('data-id');
+        const item = CATALOG_ALL.find(function(c){ return c.id === id; });
+        if (item) item.nome = inp.value;
+        catalogoAtualizar(id, { nome: inp.value });
+      });
+    });
+    // Editar mínimo
+    document.querySelectorAll('.cat-min').forEach(function(inp){
+      inp.addEventListener('change', function(){
+        const id = inp.getAttribute('data-id');
+        const v = parseFloat(inp.value) || 0;
+        const item = CATALOG_ALL.find(function(c){ return c.id === id; });
+        if (item) item.min = v;
+        catalogoAtualizar(id, { minimo: v });
+      });
+    });
+    // Editar máximo
+    document.querySelectorAll('.cat-max').forEach(function(inp){
+      inp.addEventListener('change', function(){
+        const id = inp.getAttribute('data-id');
+        const v = parseFloat(inp.value) || 0;
+        const item = CATALOG_ALL.find(function(c){ return c.id === id; });
+        if (item) item.max = v;
+        catalogoAtualizar(id, { maximo: v });
+      });
+    });
+    // Editar mercado
+    document.querySelectorAll('.cat-mercado').forEach(function(sel){
+      sel.addEventListener('change', function(){
+        const id = sel.getAttribute('data-id');
+        const item = CATALOG_ALL.find(function(c){ return c.id === id; });
+        if (item) item.mercado = sel.value;
+        catalogoAtualizar(id, { mercado: sel.value });
+      });
+    });
+    // Ativar/desativar (some das outras abas sem apagar o histórico)
+    document.querySelectorAll('.cat-ativo').forEach(function(chk){
+      chk.addEventListener('change', function(){
+        const id = chk.getAttribute('data-id');
+        const item = CATALOG_ALL.find(function(c){ return c.id === id; });
+        if (item) item.ativo = chk.checked;
+        CATALOG = CATALOG_ALL.filter(function(c){ return c.ativo; });
+        catalogoAtualizar(id, { ativo: chk.checked });
+        const row = document.querySelector('[data-row="'+id+'"]');
+        if (row) row.style.opacity = chk.checked ? '1' : '0.45';
+        renderTabs();
+      });
+    });
+    // Excluir definitivamente
+    document.querySelectorAll('[data-excluir]').forEach(function(btn){
+      btn.addEventListener('click', async function(){
+        const id = btn.getAttribute('data-excluir');
+        const item = CATALOG_ALL.find(function(c){ return c.id === id; });
+        const nome = item ? item.nome : id;
+        if (!confirm('Excluir "'+nome+'" definitivamente da lista? (o histórico de preços já registrado não é apagado)')) return;
+        await catalogoExcluir(id);
+        renderAll();
+      });
+    });
+  }
+
   // ---------- Render: Importar Nota Fiscal ----------
   let NOTA_STATE = { fase: 'form', itens: [], mercado: '', url: '' };
 
@@ -979,6 +1189,7 @@
     else if (ACTIVE_TAB === 'comparador') renderComparador();
     else if (ACTIVE_TAB === 'alertas') renderAlertas();
     else if (ACTIVE_TAB === 'orcamento') renderOrcamento();
+    else if (ACTIVE_TAB === 'catalogo') renderCatalogo();
   }
 
   (async function boot(){
