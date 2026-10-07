@@ -3,6 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <title>Compras da Família — Assis</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#1F2A20">
+<link rel="icon" href="/icons/favicon-64.png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Compras">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -229,7 +236,10 @@
         <div class="subtitle">Estoque, preços e compra do mês — Assis, SP</div>
       </div>
     </div>
-    <div id="headerFlag" class="flag"><span class="dot"></span><span id="headerFlagText">carregando…</span></div>
+    <div style="display:flex; align-items:center; gap:10px;">
+      <button id="btnInstalarApp" class="btn ghost" style="display:none; font-size:12.5px; padding:7px 12px;">📲 Instalar app</button>
+      <div id="headerFlag" class="flag"><span class="dot"></span><span id="headerFlagText">carregando…</span></div>
+    </div>
   </header>
 
   <nav class="tabs" id="tabs"></nav>
@@ -308,9 +318,11 @@
   let CATALOG = DEFAULT_CATALOG.map(function(it){ return Object.assign({ativo:true}, it); });
   let CATALOG_ALL = CATALOG.slice();
   let usandoCatalogoPadrao = true;
+  let tabelaDesperdicioExiste = true;
 
   const MERCADOS = ['Max Atacadista', 'Amigão', 'Super Bom', 'Avenida'];
   const TABS = [
+    {id:'dashboard', label:'📊 Resumo'},
     {id:'estoque', label:'📦 Estoque'},
     {id:'compras', label:'🛒 Compras'},
     {id:'precos', label:'💰 Preços'},
@@ -351,8 +363,8 @@
     return { emoji:'🔴', label:'Preço alto — evite estocar agora', classe:'ruim' };
   }
 
-  let STATE = { estoque: {}, precos: [] };
-  let ACTIVE_TAB = 'estoque';
+  let STATE = { estoque: {}, precos: [], desperdicio: [] };
+  let ACTIVE_TAB = 'dashboard';
   let isLoading = false;
 
   function fmtBRL(n){
@@ -380,10 +392,11 @@
   async function loadData(){
     try {
       isLoading = true;
-      const [estoqueRes, precosRes, catalogoRes] = await Promise.all([
+      const [estoqueRes, precosRes, catalogoRes, desperdicioRes] = await Promise.all([
         supabase.from('estoque').select('*'),
         supabase.from('precos').select('*'),
-        supabase.from('catalogo').select('*')
+        supabase.from('catalogo').select('*'),
+        supabase.from('desperdicio').select('*')
       ]);
 
       if (estoqueRes.error) throw estoqueRes.error;
@@ -424,6 +437,20 @@
           data: row.data
         };
       });
+
+      if (!desperdicioRes.error && desperdicioRes.data){
+        STATE.desperdicio = desperdicioRes.data.map(function(row){
+          return {
+            id: row.id, itemId: row.item_id, descricao: row.descricao,
+            quantidade: row.quantidade !== null ? Number(row.quantidade) : null,
+            valor: Number(row.valor_estimado || 0), data: row.data
+          };
+        });
+        tabelaDesperdicioExiste = true;
+      } else {
+        STATE.desperdicio = [];
+        tabelaDesperdicioExiste = false;
+      }
 
       isLoading = false;
     } catch(err){
@@ -525,6 +552,27 @@
     }
   }
 
+  // ---------- Registro de desperdício ----------
+  async function salvarDesperdicio(registro){
+    STATE.desperdicio.push(registro);
+    if (tabelaDesperdicioExiste){
+      try {
+        await supabase.from('desperdicio').insert({
+          id: registro.id, item_id: registro.itemId || null, descricao: registro.descricao,
+          quantidade: registro.quantidade, valor_estimado: registro.valor, data: registro.data
+        });
+      } catch(err){ console.error('Erro ao salvar desperdício:', err); }
+    }
+  }
+
+  async function excluirDesperdicio(id){
+    STATE.desperdicio = STATE.desperdicio.filter(function(d){ return d.id !== id; });
+    if (tabelaDesperdicioExiste){
+      try { await supabase.from('desperdicio').delete().eq('id', id); }
+      catch(err){ console.error('Erro ao excluir desperdício:', err); }
+    }
+  }
+
   // Render
   function renderTabs(){
     const criticos = CATALOG.filter(function(it){ return itemStatus(it) !== 'ok'; }).length;
@@ -562,6 +610,170 @@
       flag.textContent = 'estoque em dia';
       flagEl.classList.remove('warn');
     }
+  }
+
+  // ---------- Render: Dashboard (resumo / economia real) ----------
+  function mesAnteriorStr(mesStr){
+    const partes = mesStr.split('-').map(Number);
+    const d = new Date(partes[0], partes[1] - 2, 1);
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
+  }
+
+  function nomeMes(mesStr){
+    const partes = mesStr.split('-').map(Number);
+    const d = new Date(partes[0], partes[1]-1, 1);
+    return d.toLocaleDateString('pt-BR', { month:'long', year:'numeric' });
+  }
+
+  function contarOfertasAtivas(){
+    let n = 0;
+    CATALOG.forEach(function(it){
+      const entradas = STATE.precos.filter(function(p){ return p.itemId === it.id; })
+        .slice().sort(function(a,b){ return (b.data||'').localeCompare(a.data||''); });
+      if (entradas.length === 0) return;
+      const ultima = entradas[0];
+      const c = classificarPreco(it.id, ultima.preco / ultima.tamanho, [ultima.id]);
+      if (c.classe === 'excepcional' || c.classe === 'muitoboa') n++;
+    });
+    return n;
+  }
+
+  function renderDashboard(){
+    const hoje = new Date();
+    const mesAtual = hoje.toISOString().slice(0,7);
+    const mesPassado = mesAnteriorStr(mesAtual);
+
+    const gastoPorMes = {};
+    STATE.precos.forEach(function(p){
+      if (!p.data) return;
+      const m = p.data.slice(0,7);
+      gastoPorMes[m] = (gastoPorMes[m] || 0) + Number(p.preco);
+    });
+    const gastoAtual = gastoPorMes[mesAtual] || 0;
+    const gastoPassado = gastoPorMes[mesPassado] || 0;
+    const temComparacao = gastoPassado > 0;
+    const economia = gastoPassado - gastoAtual;
+    const economiaPct = temComparacao ? (economia / gastoPassado * 100) : 0;
+
+    const desperdicioMes = STATE.desperdicio
+      .filter(function(d){ return d.data && d.data.startsWith(mesAtual); })
+      .reduce(function(s,d){ return s + Number(d.valor||0); }, 0);
+
+    const criticos = CATALOG.filter(function(it){ return itemStatus(it) !== 'ok'; }).length;
+    const ofertas = contarOfertasAtivas();
+
+    const gastosPorItemMes = {};
+    STATE.precos.forEach(function(p){
+      if (!p.data || !p.data.startsWith(mesAtual)) return;
+      gastosPorItemMes[p.itemId] = (gastosPorItemMes[p.itemId] || 0) + Number(p.preco);
+    });
+    const topItens = Object.keys(gastosPorItemMes)
+      .map(function(id){
+        const it = CATALOG_ALL.find(function(c){ return c.id === id; });
+        return { nome: it ? it.nome : id, valor: gastosPorItemMes[id] };
+      })
+      .sort(function(a,b){ return b.valor - a.valor; })
+      .slice(0, 5);
+
+    let html = '';
+
+    // Cards principais: gasto / comparação
+    html += '<div class="stats-row">'
+      + '<div class="stat-card"><div class="num">'+fmtBRL(gastoAtual)+'</div><div class="lbl">gasto em '+nomeMes(mesAtual)+'</div></div>';
+
+    if (temComparacao){
+      const cls = economia >= 0 ? 'ok' : 'critico';
+      const seta = economia >= 0 ? '↓' : '↑';
+      html += '<div class="stat-card '+cls+'"><div class="num">'+seta+' '+fmtBRL(Math.abs(economia))+'</div><div class="lbl">'+(economia>=0?'economia':'a mais')+' vs. '+nomeMes(mesPassado)+'</div></div>'
+        + '<div class="stat-card '+cls+'"><div class="num">'+(economia>=0?'':'+')+economiaPct.toFixed(0)+'%</div><div class="lbl">variação no gasto</div></div>';
+    } else {
+      html += '<div class="stat-card"><div class="num">—</div><div class="lbl">ainda sem dado de '+nomeMes(mesPassado)+' pra comparar</div></div>';
+    }
+
+    html += '<div class="stat-card'+(desperdicioMes>0?' critico':'')+'"><div class="num">'+fmtBRL(desperdicioMes)+'</div><div class="lbl">perdido com desperdício</div></div>'
+      + '</div>';
+
+    html += '<div class="stats-row">'
+      + '<div class="stat-card'+(criticos>0?' repor':' ok')+'"><div class="num">'+criticos+'</div><div class="lbl">itens pra repor</div></div>'
+      + '<div class="stat-card'+(ofertas>0?' ok':'')+'"><div class="num">'+ofertas+'</div><div class="lbl">ofertas ativas agora</div></div>'
+      + '</div>';
+
+    if (!temComparacao){
+      html += '<div class="empty" style="margin-bottom:18px;"><span class="empty-icon">📊</span>Esse painel fica mais rico com o tempo — assim que houver preços registrados em dois meses diferentes, mostro a comparação de gasto automaticamente.</div>';
+    }
+
+    // Top itens do mês
+    if (topItens.length > 0){
+      html += '<div class="card" style="margin-bottom:18px;">'
+        + '<div class="group-title"><h3>💸 Itens que mais pesaram em '+nomeMes(mesAtual)+'</h3></div>'
+        + '<table class="compact"><thead><tr><th>Produto</th><th class="num">Gasto no mês</th></tr></thead><tbody>'
+        + topItens.map(function(t){ return '<tr><td data-label="Produto">'+t.nome+'</td><td data-label="Gasto" class="num">'+fmtBRL(t.valor)+'</td></tr>'; }).join('')
+        + '</tbody></table></div>';
+    }
+
+    // Registro rápido de desperdício
+    html += '<div class="card" style="margin-bottom:18px;">'
+      + '<div class="group-title"><h3>🗑️ Registrar desperdício</h3><span class="hint">o que estragou ou foi jogado fora</span></div>'
+      + (!tabelaDesperdicioExiste ? '<div class="empty" style="margin-bottom:14px;"><span class="empty-icon">🛠️</span>Rode a migração <span class="mono">migracao_desperdicio.sql</span> no Supabase pra isso ficar salvo de verdade. Por enquanto fica só nesta sessão.</div>' : '')
+      + '<form id="desperdicioForm" style="display:grid;grid-template-columns:1.4fr 1.4fr .8fr auto;gap:10px;align-items:end;">'
+      + '<div><label style="font-size:11px;color:#5b6b54;display:block;margin-bottom:3px;">Produto</label>'
+      + '<select name="itemId"><option value="">Outro / não listado</option>'
+        + CATALOG_ALL.map(function(it){ return '<option value="'+it.id+'">'+it.nome+'</option>'; }).join('')
+      + '</select></div>'
+      + '<div><label style="font-size:11px;color:#5b6b54;display:block;margin-bottom:3px;">Se "outro", descreva</label><input type="text" name="descricaoLivre" placeholder="ex: pão amanhecido"></div>'
+      + '<div><label style="font-size:11px;color:#5b6b54;display:block;margin-bottom:3px;">Valor perdido (R$)</label><input type="number" name="valor" min="0" step="0.01" placeholder="0,00"></div>'
+      + '<div><button class="btn primary" type="submit">Registrar</button></div>'
+      + '</form>'
+      + '<span id="desperdicioStatus" style="font-size:13px;color:#5b6b54;display:block;margin-top:10px;"></span>';
+
+    const recentes = STATE.desperdicio.slice().sort(function(a,b){ return (b.data||'').localeCompare(a.data||''); }).slice(0, 8);
+    if (recentes.length > 0){
+      html += '<table class="compact" style="margin-top:14px;"><thead><tr><th>Data</th><th>O quê</th><th class="num">Valor</th><th></th></tr></thead><tbody>'
+        + recentes.map(function(d){
+            return '<tr><td data-label="Data">'+(d.data||'—')+'</td><td data-label="O quê">'+d.descricao+'</td>'
+              + '<td data-label="Valor" class="num">'+fmtBRL(d.valor)+'</td>'
+              + '<td class="no-print"><button class="btn ghost" data-del-desperdicio="'+d.id+'" style="font-size:12px;padding:4px 9px;">remover</button></td></tr>';
+          }).join('')
+        + '</tbody></table>';
+    }
+    html += '</div>';
+
+    document.getElementById('panel').innerHTML = html;
+
+    document.getElementById('desperdicioForm').addEventListener('submit', async function(ev){
+      ev.preventDefault();
+      const fd = new FormData(ev.target);
+      const itemId = fd.get('itemId');
+      const descricaoLivre = (fd.get('descricaoLivre') || '').trim();
+      const valor = parseFloat(fd.get('valor')) || 0;
+      const status = document.getElementById('desperdicioStatus');
+
+      let descricao = descricaoLivre;
+      if (itemId){
+        const it = CATALOG_ALL.find(function(c){ return c.id === itemId; });
+        descricao = it ? it.nome : itemId;
+      }
+      if (!descricao){ status.textContent = 'Escolha um produto ou descreva o que foi perdido.'; return; }
+
+      const registro = {
+        id: 'd_' + Date.now() + '_' + Math.floor(Math.random()*9999),
+        itemId: itemId || null,
+        descricao: descricao,
+        quantidade: null,
+        valor: valor,
+        data: new Date().toISOString().slice(0,10)
+      };
+      await salvarDesperdicio(registro);
+      status.textContent = '✅ Registrado.';
+      renderAll();
+    });
+
+    document.querySelectorAll('[data-del-desperdicio]').forEach(function(btn){
+      btn.addEventListener('click', async function(){
+        await excluirDesperdicio(btn.getAttribute('data-del-desperdicio'));
+        renderAll();
+      });
+    });
   }
 
   function renderEstoque(){
@@ -615,15 +827,17 @@
   function renderCompras(){
     const pendentes = CATALOG.filter(function(it){ return itemStatus(it) !== 'ok'; });
     let html = '';
+    let grupos = null;
     if (pendentes.length === 0){
       html = '<div class="empty"><span class="empty-icon">✅</span>Nada pra repor agora — estoque em dia em todas as categorias.</div>';
     } else {
-      const grupos = {
+      grupos = {
         max: {titulo:'📦 Max Atacadista — compra grande (estoque)', itens:[]},
         semanal: {titulo:'🧺 Amigão / Super Bom — reposição semanal', itens:[]}
       };
       pendentes.forEach(function(it){ grupos[it.mercado].itens.push(it); });
-      html += '<div class="no-print" style="margin-bottom:14px; display:flex; justify-content:flex-end;">'
+      html += '<div class="no-print" style="margin-bottom:14px; display:flex; justify-content:flex-end; gap:10px;">'
+        + '<button class="btn ghost" id="btnWhatsappLista">📲 Enviar pro WhatsApp</button>'
         + '<button class="btn ghost" onclick="window.print()">Imprimir lista</button></div>';
       html += '<div class="card">';
       Object.keys(grupos).forEach(function(g){
@@ -641,6 +855,25 @@
       html += '</div>';
     }
     document.getElementById('panel').innerHTML = html;
+
+    const btnWpp = document.getElementById('btnWhatsappLista');
+    if (btnWpp && grupos){
+      btnWpp.addEventListener('click', function(){
+        let texto = '🛒 *Lista de compras — Compras da Família*\n\n';
+        Object.keys(grupos).forEach(function(g){
+          const grupo = grupos[g];
+          if (grupo.itens.length === 0) return;
+          texto += '*' + grupo.titulo.replace(/^[^\w]+/, '') + '*\n';
+          grupo.itens.forEach(function(it){
+            const atual = Number(STATE.estoque[it.id] || 0);
+            const sugestao = Math.max(1, it.max - atual);
+            texto += '• ' + it.nome + ' — ' + sugestao + ' ' + it.un + '\n';
+          });
+          texto += '\n';
+        });
+        window.open('https://wa.me/?text=' + encodeURIComponent(texto), '_blank');
+      });
+    }
   }
 
   function renderPrecos(){
@@ -1249,7 +1482,8 @@
 
   function renderAll(){
     renderTabs();
-    if (ACTIVE_TAB === 'estoque') renderEstoque();
+    if (ACTIVE_TAB === 'dashboard') renderDashboard();
+    else if (ACTIVE_TAB === 'estoque') renderEstoque();
     else if (ACTIVE_TAB === 'compras') renderCompras();
     else if (ACTIVE_TAB === 'precos') renderPrecos();
     else if (ACTIVE_TAB === 'nota') renderNota();
@@ -1258,6 +1492,39 @@
     else if (ACTIVE_TAB === 'orcamento') renderOrcamento();
     else if (ACTIVE_TAB === 'catalogo') renderCatalogo();
   }
+
+  // ---------- PWA: service worker + prompt de instalação ----------
+  if ('serviceWorker' in navigator){
+    window.addEventListener('load', function(){
+      navigator.serviceWorker.register('/service-worker.js').catch(function(){ /* segue sem SW se falhar */ });
+    });
+  }
+
+  let deferredInstallPrompt = null;
+  window.addEventListener('beforeinstallprompt', function(ev){
+    ev.preventDefault();
+    deferredInstallPrompt = ev;
+    const btn = document.getElementById('btnInstalarApp');
+    if (btn) btn.style.display = 'inline-block';
+  });
+
+  document.addEventListener('DOMContentLoaded', function(){
+    const btn = document.getElementById('btnInstalarApp');
+    if (btn){
+      btn.addEventListener('click', async function(){
+        if (!deferredInstallPrompt) return;
+        deferredInstallPrompt.prompt();
+        await deferredInstallPrompt.userChoice;
+        deferredInstallPrompt = null;
+        btn.style.display = 'none';
+      });
+    }
+  });
+
+  window.addEventListener('appinstalled', function(){
+    const btn = document.getElementById('btnInstalarApp');
+    if (btn) btn.style.display = 'none';
+  });
 
   (async function boot(){
     await loadData();
