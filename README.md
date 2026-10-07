@@ -1,2 +1,2 @@
 # compras-familia
-Compras inteliegentes
+Compras inteligentes
